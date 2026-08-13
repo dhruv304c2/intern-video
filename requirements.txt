@@ -1,3 +1,5 @@
+scenedetect
+chromadb
 torch
 torchvision
 transformers<5  # xbert.py (vendored BERT fork) needs transformers.modeling_utils.find_pruneable_heads_and_indices, removed in v5
@@ -7,4 +9,5 @@ opencv-python
 numpy<2
 huggingface_hub
 scipy
-scenedetect
+fastapi
+uvicorn

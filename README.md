@@ -1,155 +1,170 @@
-# InternVideo2 zero-shot video tagging (CPU / Apple Silicon)
+# intern-video
 
-Zero-shot video classification/tagging using InternVideo2-Stage2-1B: give it a
-video and a list of candidate labels/captions, get back a similarity-ranked
-top-k. Runs on CPU or Apple Silicon (MPS) — no CUDA required.
+Re-encode a video to H.264/AAC at a given bitrate, via ffmpeg. Also splits a
+video into scenes (PySceneDetect) and encodes each scene as its own clip.
 
-This vendors the official model code (`vendor/InternVideo/InternVideo2/multi_modality`,
-from https://github.com/OpenGVLab/InternVideo) rather than reimplementing the
-model, and patches a handful of CUDA-only unconditional imports + two upstream
-relative-import bugs so it runs on CPU/MPS. `videotag/pipeline.py` is a thin
-wrapper around the official `demo/utils.py::retrieve_text`.
+Requires `ffmpeg`/`ffprobe` on `PATH` (e.g. `brew install ffmpeg`) and
+`pip install -r requirements.txt` (PySceneDetect, for `encoder.ingest`).
 
-## Project layout
+### One-time setup for InternVideo2 embeddings
 
+`embed.py` wraps the vendored InternVideo2-Stage2-1B model
+(`vendor/InternVideo`) to embed scenes for content-similarity matching. It
+needs its ~2.6GB checkpoint, which isn't in git:
 ```
-videotag/            reusable modules (import as e.g. `from videotag.pipeline import classify_video`)
-  pipeline.py           classify_video() - the core zero-shot ranking call
-  bitrate_categories.py motion caption ensemble -> bitrate tier/range
-  categorize.py         Categorization dataclass wrapping bitrate_categories
-  source_bitrate.py     actual bitrate of a source file via ffprobe packets ("ground truth")
-  split_scenes.py       PySceneDetect scene splitting, with manifest caching
-  report.py             ReportEntry + build_html_report()
-tests/                test_pipeline.py, test_bitrate.py
-build_report.py       orchestrates: split vids/ -> classify scenes/ -> report.html
-run.sh                entry point for build_report.py
-vids/                 put source videos here
-scenes/               generated scene clips + cache files (safe to delete to force a re-run)
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='OpenGVLab/InternVideo2-Stage2_1B-224p-f4', filename='InternVideo2-stage2_1b-224p-f4.pt', local_dir='weights')"
 ```
-
-## One-time setup
-
-1. Create a venv (Python 3.13; the ML stack doesn't yet have wheels for 3.14) and install deps:
-   ```
-   python3.13 -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-2. Pre-warm the BERT tokenizer cache (the vendored code loads it with
-   `local_files_only=True`, no network fallback):
-   ```
-   python -c "from transformers import BertTokenizer; BertTokenizer.from_pretrained('bert-large-uncased')"
-   ```
-3. Get the InternVideo2-Stage2-1B checkpoint (gated, auto-approved):
-   - Log in: `huggingface-cli login`
-   - Visit https://huggingface.co/OpenGVLab/InternVideo2-Stage2_1B-224p-f4 and
-     accept the access form once (instant approval).
-   - Download it:
-     ```
-     python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='OpenGVLab/InternVideo2-Stage2_1B-224p-f4', filename='InternVideo2-stage2_1b-224p-f4.pt', local_dir='weights')"
-     ```
+Only needed if you use `embed.py` or `--embed`; skip it otherwise.
 
 ## Usage
 
 ```
-python -m videotag.pipeline <video.mp4> --labels labels.txt --topk 5
+python -m encoder.encode <video.mp4> <output.mp4> --kbps 2500
 ```
-`labels.txt` is one candidate label/caption per line. Prints `label ~ prob` lines.
 
 As a library:
 ```python
-from videotag.pipeline import classify_video
-classify_video("video.mp4", ["a cat", "a dog", "a car"], topk=3)
+from encoder.encode import encode_video
+encode_video("video.mp4", "output.mp4", kbps=2500)
 ```
 
-### Bitrate estimation
+### Scene-split ingestion
 
 ```
-python -m videotag.pipeline <video.mp4> --bitrate --resolution 1080p
+python -m encoder.ingest <video.mp4> <out_dir> --kbps 2500
 ```
-Ranks the video against a set of motion captions (2-3 phrasings per tier, see
-`videotag/bitrate_categories.py`), then maps the winning tier
-(`low`/`medium`/`high`, from static/moderate/high motion) to a recommended
-kbps range for the target resolution. The kbps ranges are heuristic reference
-points (roughly Apple HLS authoring spec / common streaming ladders) scaled
-by tier, not measured against real encodes — treat it as a starting point
-for a bitrate ladder, not a substitute for VMAF-based per-title tuning. See
-`CATEGORIZATION_FINDINGS.pdf` for how this caption scheme was arrived at.
+Detects scene cuts, then encodes each scene straight from the source in one
+ffmpeg pass (cut + bitrate encode together, no intermediate re-encode).
 
 As a library:
 ```python
-from videotag.bitrate_categories import estimate_bitrate
-estimate_bitrate("video.mp4", resolution="720p")
-# {'category': ..., 'motion': 'moderate', 'tier': 'medium', 'kbps_range': (2000, 3000), 'ranked': [...]}
+from encoder.ingest import ingest_video
+ingest_video("video.mp4", "out_dir", kbps=2500)  # -> list of clip paths
 ```
 
-### Full report: split -> classify -> HTML
-
-Drop source video(s) into `vids/`, then:
+Pass `--index <dir>` (or `store=VectorStore(...)` as a library) to also
+extract a few thumbnail frames per scene (`<clip>-thumb-N.jpg`, alongside the
+clip) and compute its rate-distortion curve, recording the curve in the
+vector index under the `rd-curve` namespace:
 ```
-./run.sh
+python -m encoder.ingest <video.mp4> <out_dir> --index <index_dir>
 ```
-This splits each video into scenes (PySceneDetect), classifies every scene's
-bitrate category, and writes `report.html` with:
-- a legend of the available motion-tier captions,
-- a chart of predicted bitrate vs. the *actual* bitrate of the source video
-  over time (measured from real packet sizes via `ffprobe` — see
-  `videotag/source_bitrate.py` — so you can see how well the prediction
-  tracks reality),
-- one card per scene with sample frames, category, predicted/actual bitrate,
-  and classification latency.
 
-Both scene splitting and per-scene classification are cached to disk under
-`scenes/` (a `*.manifest.json` for splits, `*.cache.json` + JPEGs per clip)
-so re-running `./run.sh` after tweaking the report itself doesn't re-run
-PySceneDetect or the model. Run `./run.sh --clean` to wipe `scenes/` and
-force a fully fresh split + classify.
+Add `--embed` (requires `--index`, and the checkpoint from "One-time setup"
+above) to also embed each scene with InternVideo2 and record it under the
+`internvideo2` namespace, for content-similarity matching against past scenes:
+```
+python -m encoder.ingest <video.mp4> <out_dir> --index <index_dir> --embed
+```
 
-## Verify the setup
+### Rate-distortion curve
+
+```python
+from encoder.rd_curve import compute_rd_curve
+compute_rd_curve("scene.mp4")  # -> [(500, 0.94), (1000, 0.97), (2000, 0.99), (4000, 0.995), (8000, 0.998)]
+```
+Encodes the scene at each bitrate rung and measures SSIM against the source
+(ffmpeg's built-in `ssim` filter - no external quality model needed). The
+SSIM values (not the kbps rungs, which are fixed/known) are what gets stored
+as the vector: two scenes that compress similarly land close together, so
+matching a new scene against this namespace surfaces past scenes with a
+similar bitrate/quality tradeoff.
+
+### InternVideo2 content embedding
+
+```python
+from embed import embed_video
+embed_video("scene.mp4")  # -> L2-normalized joint video embedding, shape (512,)
+```
+Wraps the vendored model's `get_vid_feat` - the raw video embedding, with no
+text/caption comparison - so it can be dropped into the vector index under
+its own namespace and matched against other scenes by content similarity.
+
+### Vector index
+
+Different embedders produce incompatible vector spaces, so the index is
+namespaced per embedder/encoding type (one Chroma collection per namespace);
+within a namespace, search is Chroma's own nearest-neighbor index.
+
+```python
+from vectorstore import VectorStore
+
+store = VectorStore("index")
+store.add("clip-embedder", embedding, {"video": "foo.mp4", "scene": 1})
+store.search("clip-embedder", query_embedding, topk=5)  # -> [(metadata, similarity), ...]
+```
+
+## API
 
 ```
-python tests/test_pipeline.py
-python tests/test_bitrate.py
+python api.py <index_dir_or_url>
 ```
-Runs the ranking against the vendored example video and checks it matches the
-documented reference output, and checks bitrate estimation returns a
-well-formed tier/range.
+`<index_dir_or_url>` is either a filesystem path (fine for one-process use,
+e.g. running everything sequentially) or an `http(s)://` URL to a running
+`chroma run` server (required if ingest and serve run as separate
+processes - see "Ingest + serve" below for why).
 
-## Performance
+Serves `GET /videos` at `http://127.0.0.1:8000`, listing every source video
+that's been ingested, with its scene clips, a few thumbnail frames, RD
+curve, and whether an InternVideo2 embedding was stored. `clip` and
+`thumbnails` are URLs under the `/media/` mount (also served by `api.py`,
+from `--media-root`, default `scenes` - see "Ingest + serve" below):
+```json
+[
+  {
+    "source_video": "foo",
+    "scenes": [
+      {
+        "scene": 1,
+        "clip": "/media/foo-Scene-001.mp4",
+        "start": 0.0,
+        "end": 2.0,
+        "thumbnails": ["/media/foo-Scene-001-thumb-1.jpg", "/media/foo-Scene-001-thumb-2.jpg", "/media/foo-Scene-001-thumb-3.jpg"],
+        "rd_curve": {"kbps": [500, 1000, 2000, 4000, 8000], "ssim": [0.94, 0.97, 0.99, 0.995, 0.998]},
+        "has_embedding": true
+      }
+    ]
+  }
+]
+```
 
-1B ViT + BERT-large in fp32 on CPU/MPS — expect tens of seconds per video, not
-real-time. Fine for tagging a handful of videos; batch a large corpus overnight.
+## Frontend
 
-## What was patched in the vendored code, and why
+`frontend/` is a separate static project (plain HTML/JS, Chart.js via CDN,
+no build step) that fetches from the API above - it's a different origin/
+port, so `api.py` enables CORS for it.
+```
+frontend/serve.sh
+```
+Serves the UI at `http://127.0.0.1:5500`, listing videos and rendering each
+scene's RD curve as a chart. Requires `api.py` (above) running separately.
 
-- `models/backbones/internvideo2/{internvideo2,internvl_clip_vision,internvideo2_clip_vision}.py`:
-  wrapped unconditional `flash_attn` imports in try/except — `FlashAttention`
-  is only instantiated when `use_flash_attn=True`, which our config sets to
-  `False` (fp32 CPU/MPS), so the package is never actually needed.
-- `models/__init__.py`: made its eager imports of CLIP/audiovisual model
-  variants (which pull in `flash_attn`/LLaMA/mobileclip chains we don't use)
-  best-effort instead of hard failures.
-- `models/criterions.py`: fixed `from ..utils.distributed import ...` /
-  `from ..utils.easydict import ...` to absolute imports (`from utils....`) —
-  this is the exact fix documented in the upstream `DEMO_USAGE_GUIDE.md` for
-  running outside their package-install path.
-- `models/backbones/bert/xbert.py`: `apply_chunking_to_forward`,
-  `find_pruneable_heads_and_indices`, `prune_linear_layer` moved from
-  `transformers.modeling_utils` to `transformers.pytorch_utils` in newer
-  `transformers` — updated the import location (also pinned `transformers<5`,
-  since `find_pruneable_heads_and_indices` was removed entirely in v5).
-- `demo/pipeline_config.py`: copy of `demo/internvideo2_stage2_config.py` with
-  `device`/`pretrained_path` set for local eval, `use_checkpoint`/
-  `gradient_checkpointing`/`deepspeed.enable` off (training-only features), and
-  `vision_encoder.pretrained=None` — the original path is a placeholder
-  (`'your_model_path/1B_stage2_pt.pth'`) for a redundant intermediate
-  vision-only load; the full fused checkpoint is loaded afterward via
-  `pretrained_path` anyway.
-- `demo/utils.py`: swapped the vendored custom `BertTokenizer` subclass for
-  stock `transformers.BertTokenizer` — the vendored one predates transformers'
-  internal tokenizer refactor (`self.vocab`/`get_vocab` no longer compatible);
-  stock `BertTokenizer` is the same WordPiece tokenizer and works with the
-  same `vocab.txt`.
-- `demo/utils.py::frames2tensor`: fixed `.to(device).float()` ordering to
-  `.float().to(device)` — moving a float64 numpy tensor to an MPS device
-  before casting throws (MPS doesn't support float64); this is a genuine
-  upstream bug, not just a CPU workaround.
+## Ingest + serve, running both at once
+
+Chroma's on-disk store isn't safe for one process to read while a *different*
+process writes to it - it can corrupt the collection it's reading. `chroma
+run` (its own server) fixes this by making one process the sole owner of the
+store, so run it first:
+```
+./chroma-server.sh   # owns index/, serves it over HTTP on :8001
+./ingest.sh          # picks up the first video in vids/, ingests it with --embed
+./serve.sh           # runs the API against chroma-server.sh (frontend/serve.sh separately for the UI)
+```
+Three separate terminals - `ingest.sh` and `serve.sh` both talk to
+`chroma-server.sh` over HTTP, so refresh the frontend as scenes land.
+
+To start over, stop `chroma-server.sh` first (it holds `index/` open), then:
+```
+./clean-db.sh   # wipes index/ and scenes/; refuses to run while chroma-server.sh is up
+```
+
+## Test
+
+```
+python tests/test_encode.py
+python tests/test_ingest.py
+python tests/test_vectorstore.py
+python tests/test_rd_curve.py
+python tests/test_embed.py
+python tests/test_api.py
+```

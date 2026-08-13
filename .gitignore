@@ -1,18 +1,16 @@
-# source/generated video content
-vids/*
-scenes/
-report.html
-
-# model weights (large, downloaded per README setup)
-weights/*
-
-# per-clip classification cache + scene split manifests (regenerated on run)
-*.cache.json
-*.manifest.json
-
 # python
 .venv/
 __pycache__/
 *.pyc
 
 .DS_Store
+
+# run.sh inputs/outputs
+vids/*
+!vids/.gitkeep
+scenes/
+index/
+.server.pid
+
+# InternVideo2 checkpoint (~2.6GB) - see README "One-time setup"
+weights/
