@@ -15,7 +15,7 @@ sys.path.insert(
 from encoder.rd_curve import compute_rd_curve
 
 
-def test_higher_bitrate_gives_higher_or_equal_ssim():
+def test_higher_bitrate_gives_higher_or_equal_vmaf():
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "src.mp4")
         subprocess.run(
@@ -37,10 +37,12 @@ def test_higher_bitrate_gives_higher_or_equal_ssim():
         )
 
         assert [k for k, _ in curve] == [200, 4000]
-        assert all(0.0 <= ssim <= 1.0 for _, ssim in curve)
+        assert all(
+            0.0 <= vmaf <= 100.0 for _, vmaf in curve
+        )
         assert curve[1][1] >= curve[0][1]
         print("OK:", curve)
 
 
 if __name__ == "__main__":
-    test_higher_bitrate_gives_higher_or_equal_ssim()
+    test_higher_bitrate_gives_higher_or_equal_vmaf()

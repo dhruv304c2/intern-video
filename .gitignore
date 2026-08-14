@@ -10,7 +10,7 @@ vids/*
 !vids/.gitkeep
 scenes/
 index/
-.server.pid
+.pids/
 
 # InternVideo2 checkpoint (~2.6GB) - see README "One-time setup"
 weights/

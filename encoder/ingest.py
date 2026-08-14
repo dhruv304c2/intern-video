@@ -60,19 +60,18 @@ def ingest_video(
     out_dir: str,
     kbps: int = 2500,
     store: VectorStore | None = None,
-    embed: bool = False,
 ) -> list[str]:
     """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
 
     If `store` is given, also computes each scene's rate-distortion curve (see
-    encoder.rd_curve) and adds it to the store's "rd-curve" namespace. If
-    `embed` is also set, additionally embeds each scene with InternVideo2
-    (see embed.py) and adds it to the store's "internvideo2" namespace.
+    encoder.rd_curve), adds it to the store's "rd-curve" namespace, and embeds
+    the scene with InternVideo2 (see embed.py) into the store's "internvideo2"
+    namespace - the only embedder used, so this always runs when a store is
+    given, requiring the checkpoint (see README "One-time setup").
     """
-    # embed.py (imported lazily below, if embed=True) changes the
-    # process's cwd as a side effect of loading the vendored model config -
-    # resolve paths to absolute up front so later scenes in this loop
-    # aren't affected.
+    # embed.py (imported lazily below) changes the process's cwd as a
+    # side effect of loading the vendored model config - resolve paths to
+    # absolute up front so later scenes in this loop aren't affected.
     video_path = os.path.abspath(video_path)
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
@@ -122,24 +121,23 @@ def ingest_video(
             curve = compute_rd_curve(out_path)
             store.add(
                 "rd-curve",
-                [ssim for _, ssim in curve],
+                [vmaf for _, vmaf in curve],
                 {
                     **scene_meta,
                     "kbps_rungs": [k for k, _ in curve],
                 },
             )
-            if embed:
-                print(
-                    f"[{i}/{n}] embedding with InternVideo2",
-                    flush=True,
-                )
-                from embed import embed_video
+            print(
+                f"[{i}/{n}] embedding with InternVideo2",
+                flush=True,
+            )
+            from embed import embed_video
 
-                store.add(
-                    "internvideo2",
-                    embed_video(out_path),
-                    scene_meta,
-                )
+            store.add(
+                "internvideo2",
+                embed_video(out_path),
+                scene_meta,
+            )
     return outputs
 
 
@@ -160,16 +158,9 @@ def main():
     )
     parser.add_argument(
         "--index",
-        help="vector store root to also record each scene's rate-distortion curve into",
-    )
-    parser.add_argument(
-        "--embed",
-        action="store_true",
-        help="also embed each scene with InternVideo2 into the store (requires --index)",
+        help="vector store root to also record each scene's rate-distortion curve and InternVideo2 embedding into",
     )
     args = parser.parse_args()
-    if args.embed and not args.index:
-        parser.error("--embed requires --index")
 
     store = VectorStore(args.index) if args.index else None
     outputs = ingest_video(
@@ -177,7 +168,6 @@ def main():
         args.out_dir,
         kbps=args.kbps,
         store=store,
-        embed=args.embed,
     )
     print(
         f"wrote {len(outputs)} scene clips to {args.out_dir}"

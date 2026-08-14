@@ -14,7 +14,9 @@ needs its ~2.6GB checkpoint, which isn't in git:
 ```
 python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='OpenGVLab/InternVideo2-Stage2_1B-224p-f4', filename='InternVideo2-stage2_1b-224p-f4.pt', local_dir='weights')"
 ```
-Only needed if you use `embed.py` or `--embed`; skip it otherwise.
+Only needed if you use `embed.py` directly, or `encoder.ingest` with
+`--index` (it's the only embedder, so it always runs then); skip it if
+you're only using `encoder.encode`/`encoder.ingest` without `--index`.
 
 ## Usage
 
@@ -44,31 +46,26 @@ ingest_video("video.mp4", "out_dir", kbps=2500)  # -> list of clip paths
 
 Pass `--index <dir>` (or `store=VectorStore(...)` as a library) to also
 extract a few thumbnail frames per scene (`<clip>-thumb-N.jpg`, alongside the
-clip) and compute its rate-distortion curve, recording the curve in the
-vector index under the `rd-curve` namespace:
+clip), compute its rate-distortion curve, and embed it with InternVideo2 (the
+only embedder - needs the checkpoint from "One-time setup" above) -
+recording the curve under the `rd-curve` namespace and the embedding under
+`internvideo2`, for content-similarity matching against past scenes:
 ```
 python -m encoder.ingest <video.mp4> <out_dir> --index <index_dir>
-```
-
-Add `--embed` (requires `--index`, and the checkpoint from "One-time setup"
-above) to also embed each scene with InternVideo2 and record it under the
-`internvideo2` namespace, for content-similarity matching against past scenes:
-```
-python -m encoder.ingest <video.mp4> <out_dir> --index <index_dir> --embed
 ```
 
 ### Rate-distortion curve
 
 ```python
 from encoder.rd_curve import compute_rd_curve
-compute_rd_curve("scene.mp4")  # -> [(500, 0.94), (1000, 0.97), (2000, 0.99), (4000, 0.995), (8000, 0.998)]
+compute_rd_curve("scene.mp4")  # -> [(500, 82.1), (1000, 91.4), (2000, 96.8), (4000, 98.9), (8000, 99.6)]
 ```
-Encodes the scene at each bitrate rung and measures SSIM against the source
-(ffmpeg's built-in `ssim` filter - no external quality model needed). The
-SSIM values (not the kbps rungs, which are fixed/known) are what gets stored
-as the vector: two scenes that compress similarly land close together, so
-matching a new scene against this namespace surfaces past scenes with a
-similar bitrate/quality tradeoff.
+Encodes the scene at each bitrate rung and measures VMAF against the source
+(ffmpeg's `libvmaf` filter - requires an ffmpeg build with
+`--enable-libvmaf`, no separate quality model to install). This is recorded
+per scene for display (see "API" below) - it's not used for
+content-similarity matching. InternVideo2 (below) is the only embedding used
+for that.
 
 ### InternVideo2 content embedding
 
@@ -106,7 +103,7 @@ processes - see "Ingest + serve" below for why).
 
 Serves `GET /videos` at `http://127.0.0.1:8000`, listing every source video
 that's been ingested, with its scene clips, a few thumbnail frames, RD
-curve, and whether an InternVideo2 embedding was stored. `clip` and
+curve, and its InternVideo2 embedding status. `clip` and
 `thumbnails` are URLs under the `/media/` mount (also served by `api.py`,
 from `--media-root`, default `scenes` - see "Ingest + serve" below):
 ```json
@@ -120,7 +117,7 @@ from `--media-root`, default `scenes` - see "Ingest + serve" below):
         "start": 0.0,
         "end": 2.0,
         "thumbnails": ["/media/foo-Scene-001-thumb-1.jpg", "/media/foo-Scene-001-thumb-2.jpg", "/media/foo-Scene-001-thumb-3.jpg"],
-        "rd_curve": {"kbps": [500, 1000, 2000, 4000, 8000], "ssim": [0.94, 0.97, 0.99, 0.995, 0.998]},
+        "rd_curve": {"kbps": [500, 1000, 2000, 4000, 8000], "vmaf": [82.1, 91.4, 96.8, 98.9, 99.6]},
         "has_embedding": true
       }
     ]
@@ -134,7 +131,7 @@ from `--media-root`, default `scenes` - see "Ingest + serve" below):
 no build step) that fetches from the API above - it's a different origin/
 port, so `api.py` enables CORS for it.
 ```
-frontend/serve.sh
+frontend/serve.sh start
 ```
 Serves the UI at `http://127.0.0.1:5500`, listing videos and rendering each
 scene's RD curve as a chart. Requires `api.py` (above) running separately.
@@ -144,14 +141,25 @@ scene's RD curve as a chart. Requires `api.py` (above) running separately.
 Chroma's on-disk store isn't safe for one process to read while a *different*
 process writes to it - it can corrupt the collection it's reading. `chroma
 run` (its own server) fixes this by making one process the sole owner of the
-store, so run it first:
+store, so start it first:
 ```
-./chroma-server.sh   # owns index/, serves it over HTTP on :8001
-./ingest.sh          # picks up the first video in vids/, ingests it with --embed
-./serve.sh           # runs the API against chroma-server.sh (frontend/serve.sh separately for the UI)
+./chroma-server.sh start   # owns index/, serves it over HTTP on :8001
+./ingest.sh start          # picks up the first video in vids/, ingests + embeds it
+./serve.sh start           # runs the API against chroma-server.sh (frontend/serve.sh start separately for the UI)
 ```
-Three separate terminals - `ingest.sh` and `serve.sh` both talk to
-`chroma-server.sh` over HTTP, so refresh the frontend as scenes land.
+`ingest.sh` and `serve.sh` both talk to `chroma-server.sh` over HTTP, so
+refresh the frontend as scenes land.
+
+Every script above (plus `frontend/serve.sh`) takes `start`/`stop` -
+`start` backgrounds the process and writes its pid to `.pids/<name>.pid`
+(logs alongside it at `.pids/<name>.log`); `stop` reads that pid file and
+kills it. `start` refuses to double-launch if one is already running;
+`stop` on an already-stopped one is a no-op.
+```
+./serve.sh stop
+./ingest.sh stop
+./chroma-server.sh stop
+```
 
 To start over, stop `chroma-server.sh` first (it holds `index/` open), then:
 ```

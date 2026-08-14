@@ -61,8 +61,8 @@ def test_list_videos_reflects_ingested_scenes():
         assert scene_numbers == sorted(scene_numbers)
         for scene in video["scenes"]:
             assert scene["rd_curve"]["kbps"]
-            assert scene["rd_curve"]["ssim"]
-            assert scene["has_embedding"] is False
+            assert scene["rd_curve"]["vmaf"]
+            assert scene["has_embedding"] is True
             assert scene["clip"].startswith("/media/")
             assert len(scene["thumbnails"]) == 3
             for thumb in scene["thumbnails"]:

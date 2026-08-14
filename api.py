@@ -1,11 +1,10 @@
 """JSON API listing ingested videos and their scene data.
 
 Reads whatever `encoder.ingest` has written into a vector store (see
-vectorstore.VectorStore): the "rd-curve" namespace (always present when
-ingestion was run with --index) and the "internvideo2" namespace (present
-only when ingestion also used --embed). Groups scene entries by their
-source video for display. The frontend/ directory is a separate project
-that consumes this API over HTTP - see frontend/app.js.
+vectorstore.VectorStore): the "rd-curve" and "internvideo2" namespaces,
+both always present when ingestion was run with --index. Groups scene
+entries by their source video for display. The frontend/ directory is a
+separate project that consumes this API over HTTP - see frontend/app.js.
 """
 
 import argparse
@@ -63,7 +62,7 @@ def build_videos(
                 ],
                 "rd_curve": {
                     "kbps": meta["kbps_rungs"],
-                    "ssim": vector,
+                    "vmaf": vector,
                 },
                 "has_embedding": meta["clip"]
                 in embedded_clips,

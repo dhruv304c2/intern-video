@@ -38,8 +38,8 @@ function renderScene(sourceVideo, scene) {
         labels: scene.rd_curve.kbps,
         datasets: [
           {
-            label: "SSIM vs kbps",
-            data: scene.rd_curve.ssim,
+            label: "VMAF vs kbps",
+            data: scene.rd_curve.vmaf,
           },
         ],
       },
