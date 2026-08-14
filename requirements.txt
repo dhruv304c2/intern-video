@@ -11,3 +11,5 @@ huggingface_hub
 scipy
 fastapi
 uvicorn
+ruff
+basedpyright

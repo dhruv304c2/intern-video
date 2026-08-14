@@ -28,6 +28,19 @@ function renderScene(sourceVideo, scene) {
   }
   card.appendChild(thumbs);
 
+  if (scene.embedding) {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = `Embedding (${scene.embedding.length}d)`;
+    details.appendChild(summary);
+    const pre = document.createElement("pre");
+    pre.textContent = scene.embedding
+      .map((v) => v.toFixed(4))
+      .join(", ");
+    details.appendChild(pre);
+    card.appendChild(details);
+  }
+
   if (scene.rd_curve) {
     const canvas = document.createElement("canvas");
     canvas.id = canvasId(sourceVideo, scene.scene);

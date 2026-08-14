@@ -9,7 +9,9 @@ import _path  # noqa: F401
 from core.rd_curve import compute_rd_curve
 
 
-def test_higher_bitrate_gives_higher_or_equal_vmaf():
+def test_higher_bitrate_gives_higher_or_equal_vmaf() -> (
+    None
+):
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "src.mp4")
         subprocess.run(

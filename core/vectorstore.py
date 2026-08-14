@@ -13,10 +13,12 @@ from urllib.parse import urlparse
 
 import chromadb
 import numpy as np
+import numpy.typing as npt
+from chromadb.api import ClientAPI
 
 
 class VectorStore:
-    def __init__(self, root: str):
+    def __init__(self, root: str) -> None:
         """`root` is either a filesystem path (single-process use, e.g.
         tests) or an http(s):// URL pointing at a running `chroma run`
         server. A bare on-disk PersistentClient corrupts itself if a
@@ -25,17 +27,21 @@ class VectorStore:
         one process and doesn't have that problem, so real deployments
         where ingest and serve run as separate processes must use it.
         """
+        self._client: ClientAPI
         if root.startswith(("http://", "https://")):
             parsed = urlparse(root)
             self._client = chromadb.HttpClient(
-                host=parsed.hostname, port=parsed.port
+                host=parsed.hostname or "localhost",
+                port=parsed.port or 8000,
             )
         else:
             self._client = chromadb.PersistentClient(
                 path=root
             )
 
-    def _collection(self, namespace: str):
+    def _collection(
+        self, namespace: str
+    ) -> chromadb.Collection:
         return self._client.get_or_create_collection(
             namespace, metadata={"hnsw:space": "cosine"}
         )
@@ -43,8 +49,8 @@ class VectorStore:
     def add(
         self,
         namespace: str,
-        vector: np.ndarray,
-        metadata: dict,
+        vector: npt.ArrayLike,
+        metadata: chromadb.Metadata,
     ) -> None:
         """Append one embedding + its metadata to `namespace`'s index."""
         vector = np.asarray(
@@ -59,9 +65,9 @@ class VectorStore:
     def search(
         self,
         namespace: str,
-        query: np.ndarray,
+        query: npt.ArrayLike,
         topk: int = 5,
-    ) -> list[tuple[dict, float]]:
+    ) -> list[tuple[chromadb.Metadata, float]]:
         """Return up to `topk` (metadata, cosine_similarity) pairs for `namespace`, best match first."""
         query = np.asarray(query, dtype=np.float32).reshape(
             -1
@@ -73,17 +79,22 @@ class VectorStore:
             query_embeddings=[query.tolist()],
             n_results=min(topk, collection.count()),
         )
+        # metadatas/distances are None only when excluded from
+        # `include` - we never exclude them, so always populated.
+        metadatas = result["metadatas"]
+        distances = result["distances"]
+        assert metadatas is not None
+        assert distances is not None
         return [
             (meta, 1 - dist)
             for meta, dist in zip(
-                result["metadatas"][0],
-                result["distances"][0],
+                metadatas[0], distances[0]
             )
         ]
 
     def list_all(
         self, namespace: str
-    ) -> list[tuple[dict, list[float]]]:
+    ) -> list[tuple[chromadb.Metadata, list[float]]]:
         """Return every (metadata, vector) pair stored in `namespace`, in no particular order."""
         collection = self._collection(namespace)
         if collection.count() == 0:
@@ -91,9 +102,13 @@ class VectorStore:
         result = collection.get(
             include=["metadatas", "embeddings"]
         )
+        # metadatas/embeddings are None only when excluded from
+        # `include` - we never exclude them, so always populated.
+        metadatas = result["metadatas"]
+        embeddings = result["embeddings"]
+        assert metadatas is not None
+        assert embeddings is not None
         return [
-            (meta, vector.tolist())
-            for meta, vector in zip(
-                result["metadatas"], result["embeddings"]
-            )
+            (meta, [float(v) for v in vector])
+            for meta, vector in zip(metadatas, embeddings)
         ]

@@ -10,6 +10,12 @@ from core.encode import encode_video
 from core.rd_curve import compute_rd_curve
 from core.vectorstore import VectorStore
 
+# captured before the core.embed import below, which changes the
+# process's cwd as a side effect of loading the vendored model config
+_ORIG_CWD = os.getcwd()
+
+from core.embed import embed_video
+
 THUMBNAIL_FRACTIONS = [0.25, 0.5, 0.75]
 
 
@@ -69,11 +75,14 @@ def ingest_video(
     namespace - the only embedder used, so this always runs when a store is
     given, requiring the checkpoint (see README "One-time setup").
     """
-    # embed.py (imported lazily below) changes the process's cwd as a
-    # side effect of loading the vendored model config - resolve paths to
-    # absolute up front so later scenes in this loop aren't affected.
-    video_path = os.path.abspath(video_path)
-    out_dir = os.path.abspath(out_dir)
+    # core.embed (imported above) has already changed the process's cwd
+    # by this point - resolve against the original cwd, not the current one.
+    video_path = os.path.abspath(
+        os.path.join(_ORIG_CWD, video_path)
+    )
+    out_dir = os.path.abspath(
+        os.path.join(_ORIG_CWD, out_dir)
+    )
     os.makedirs(out_dir, exist_ok=True)
     base = os.path.splitext(os.path.basename(video_path))[0]
     scene_list = detect(video_path, ContentDetector()) or [
@@ -131,8 +140,6 @@ def ingest_video(
                 f"[{i}/{n}] embedding with InternVideo2",
                 flush=True,
             )
-            from core.embed import embed_video
-
             store.add(
                 "internvideo2",
                 embed_video(out_path),
@@ -141,7 +148,7 @@ def ingest_video(
     return outputs
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "video", help="path to a source video file"

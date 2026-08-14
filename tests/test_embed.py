@@ -18,7 +18,7 @@ FIXTURE = os.path.join(
 )
 
 
-def test_embed_video_is_deterministic_unit_vector():
+def test_embed_video_is_deterministic_unit_vector() -> None:
     v1 = embed_video(FIXTURE)
     v2 = embed_video(FIXTURE)
 

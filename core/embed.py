@@ -3,10 +3,9 @@
 Wraps the vendored official model code
 (vendor/InternVideo/InternVideo2/multi_modality) instead of reimplementing
 it. Returns the raw L2-normalized joint video embedding
-(model.get_vid_feat) - no text/caption comparison, unlike the old
-classify_video - so it can be dropped straight into vectorstore.VectorStore
-under its own namespace and matched against other videos by content
-similarity.
+(model.get_vid_feat), so it can be dropped straight into
+vectorstore.VectorStore under its own namespace and matched against other
+videos by content similarity.
 """
 
 import argparse
@@ -16,6 +15,7 @@ import logging
 import os
 import sys
 import warnings
+from typing import Any
 
 import numpy as np
 import torch
@@ -50,18 +50,21 @@ os.chdir(VENDOR_DIR)
 sys.path.insert(0, VENDOR_DIR)
 
 with contextlib.redirect_stdout(io.StringIO()):
-    from demo.utils import (
+    # only importable after the sys.path.insert above - not a real
+    # static package, so the type checker can't resolve it.
+    from demo.utils import (  # pyright: ignore[reportMissingImports]
         _frame_from_video,
         frames2tensor,
         setup_internvideo2,
     )
-    from demo_config import (
+    from demo_config import (  # pyright: ignore[reportMissingImports]
         Config,
         eval_dict_leaf,
     )
 
-_model = None
-_config = None
+# vendored, unstubbed types - Any is honest here, not a shortcut.
+_model: Any = None
+_config: Any = None
 
 
 def _device() -> str:
@@ -71,7 +74,7 @@ def _device() -> str:
     return "cpu"
 
 
-def _load():
+def _load() -> None:
     global _model, _config
     if _model is not None:
         return
@@ -110,7 +113,7 @@ def embed_video(video_path: str) -> np.ndarray:
     return vid_feat.detach().cpu().numpy().reshape(-1)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "video", help="path to a video file"

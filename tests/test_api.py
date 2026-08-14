@@ -12,7 +12,7 @@ from core.vectorstore import VectorStore
 from ingest import ingest_video
 
 
-def test_list_videos_reflects_ingested_scenes():
+def test_list_videos_reflects_ingested_scenes() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "src.mp4")
         subprocess.run(
@@ -56,6 +56,7 @@ def test_list_videos_reflects_ingested_scenes():
             assert scene["rd_curve"]["kbps"]
             assert scene["rd_curve"]["vmaf"]
             assert scene["has_embedding"] is True
+            assert len(scene["embedding"]) > 0
             assert scene["clip"].startswith("/media/")
             assert len(scene["thumbnails"]) == 3
             for thumb in scene["thumbnails"]:

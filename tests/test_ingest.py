@@ -9,7 +9,7 @@ import _path  # noqa: F401
 from ingest import ingest_video
 
 
-def test_ingest_splits_scenes():
+def test_ingest_splits_scenes() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "src.mp4")
         subprocess.run(

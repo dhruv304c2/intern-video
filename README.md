@@ -119,7 +119,7 @@ processes - see "Ingest + serve" below for why).
 
 Serves `GET /videos` at `http://127.0.0.1:8000`, listing every source video
 that's been ingested, with its scene clips, a few thumbnail frames, RD
-curve, and its InternVideo2 embedding status. `clip` and
+curve, and its InternVideo2 embedding. `clip` and
 `thumbnails` are URLs under the `/media/` mount (also served by
 `core/api.py`, from `--media-root`, default `scenes` - see "Ingest + serve"
 below):
@@ -135,6 +135,7 @@ below):
         "end": 2.0,
         "thumbnails": ["/media/foo-Scene-001-thumb-1.jpg", "/media/foo-Scene-001-thumb-2.jpg", "/media/foo-Scene-001-thumb-3.jpg"],
         "rd_curve": {"kbps": [500, 1000, 2000, 4000, 8000], "vmaf": [82.1, 91.4, 96.8, 98.9, 99.6]},
+        "embedding": [0.0123, -0.0456, ...],
         "has_embedding": true
       }
     ]
@@ -192,4 +193,14 @@ python tests/test_vectorstore.py
 python tests/test_rd_curve.py
 python tests/test_embed.py
 python tests/test_api.py
+```
+
+## Quality gate
+
+`.githooks/pre-commit` runs `ruff format --check`, `ruff check`, and
+`basedpyright` (type checker - config in `pyproject.toml`) over
+`core/`/`ingest.py`/`tests/`, and blocks the commit if any of them fail.
+Opt in once per clone:
+```
+git config core.hooksPath .githooks
 ```

@@ -9,7 +9,7 @@ import _path  # noqa: F401
 from core.encode import encode_video
 
 
-def test_encode_produces_video_stream():
+def test_encode_produces_video_stream() -> None:
     with (
         tempfile.NamedTemporaryFile(suffix=".mp4") as src,
         tempfile.NamedTemporaryFile(suffix=".mp4") as out,

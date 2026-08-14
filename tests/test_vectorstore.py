@@ -8,7 +8,9 @@ import numpy as np
 from core.vectorstore import VectorStore
 
 
-def test_search_returns_closest_match_within_namespace():
+def test_search_returns_closest_match_within_namespace() -> (
+    None
+):
     with tempfile.TemporaryDirectory() as tmp:
         store = VectorStore(tmp)
         store.add(
@@ -42,7 +44,7 @@ def test_search_returns_closest_match_within_namespace():
         print("OK:", results)
 
 
-def test_search_on_empty_namespace_returns_empty():
+def test_search_on_empty_namespace_returns_empty() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         assert (
             VectorStore(tmp).search(

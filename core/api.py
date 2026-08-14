@@ -9,6 +9,7 @@ separate project that consumes this API over HTTP - see frontend/app.js.
 
 import argparse
 import os
+from typing import NotRequired, TypedDict, cast
 
 import uvicorn
 from fastapi import FastAPI
@@ -16,6 +17,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.vectorstore import VectorStore
+
+
+class SceneMeta(TypedDict):
+    """The real shape ingest.py writes - chromadb.Metadata only
+    knows the generic value union it's willing to store."""
+
+    clip: str
+    source_video: str
+    scene: int
+    start: float
+    end: float
+    thumbnails: list[str]
+    # only present on "rd-curve" namespace entries, not "internvideo2"
+    kbps_rungs: NotRequired[list[int]]
 
 
 def build_videos(
@@ -36,13 +51,14 @@ def build_videos(
             else f"/media/{rel}"
         )
 
-    embedded_clips = {
-        meta["clip"]
-        for meta, _ in store.list_all("internvideo2")
+    embedding_by_clip = {
+        cast(SceneMeta, meta)["clip"]: vector
+        for meta, vector in store.list_all("internvideo2")
     }
 
     videos: dict[str, dict] = {}
-    for meta, vector in store.list_all("rd-curve"):
+    for raw_meta, vector in store.list_all("rd-curve"):
+        meta = cast(SceneMeta, raw_meta)
         video = videos.setdefault(
             meta["source_video"],
             {
@@ -61,11 +77,14 @@ def build_videos(
                     for t in meta.get("thumbnails", [])
                 ],
                 "rd_curve": {
-                    "kbps": meta["kbps_rungs"],
+                    "kbps": meta.get("kbps_rungs", []),
                     "vmaf": vector,
                 },
+                "embedding": embedding_by_clip.get(
+                    meta["clip"]
+                ),
                 "has_embedding": meta["clip"]
-                in embedded_clips,
+                in embedding_by_clip,
             }
         )
 
@@ -90,7 +109,7 @@ def create_app(
     )
 
     @app.get("/videos")
-    def list_videos():
+    def list_videos() -> list[dict]:
         return build_videos(store, media_root)
 
     # check_dir=False: media_root may not exist yet on a fresh
@@ -102,7 +121,7 @@ def create_app(
     return app
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "index",
