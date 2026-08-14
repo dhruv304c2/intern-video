@@ -2,17 +2,11 @@
 
 import os
 import subprocess
-import sys
 import tempfile
 
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ),
-)
+import _path  # noqa: F401
 
-from encoder.encode import encode_video
+from core.encode import encode_video
 
 
 def test_encode_produces_video_stream():

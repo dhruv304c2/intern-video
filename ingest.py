@@ -6,9 +6,9 @@ import subprocess
 
 from scenedetect import ContentDetector, detect
 
-from encoder.encode import encode_video
-from encoder.rd_curve import compute_rd_curve
-from vectorstore import VectorStore
+from core.encode import encode_video
+from core.rd_curve import compute_rd_curve
+from core.vectorstore import VectorStore
 
 THUMBNAIL_FRACTIONS = [0.25, 0.5, 0.75]
 
@@ -64,7 +64,7 @@ def ingest_video(
     """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
 
     If `store` is given, also computes each scene's rate-distortion curve (see
-    encoder.rd_curve), adds it to the store's "rd-curve" namespace, and embeds
+    rd_curve.py), adds it to the store's "rd-curve" namespace, and embeds
     the scene with InternVideo2 (see embed.py) into the store's "internvideo2"
     namespace - the only embedder used, so this always runs when a store is
     given, requiring the checkpoint (see README "One-time setup").
@@ -131,7 +131,7 @@ def ingest_video(
                 f"[{i}/{n}] embedding with InternVideo2",
                 flush=True,
             )
-            from embed import embed_video
+            from core.embed import embed_video
 
             store.add(
                 "internvideo2",

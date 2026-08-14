@@ -1,8 +1,8 @@
 """Rate-distortion curve for a scene: VMAF vs bitrate at a fixed set of rungs.
 
-Purely descriptive data recorded per scene (see encoder.ingest) for display -
-not used for content-similarity matching. InternVideo2 (embed.py) is the only
-embedding used for that, when --embed is passed.
+Purely descriptive data recorded per scene (see ingest.py) for display - not
+used for content-similarity matching. InternVideo2 (embed.py) is the only
+embedding used for that.
 """
 
 import re
@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from encoder.encode import encode_video
+from core.encode import encode_video
 
 DEFAULT_KBPS_RUNGS = [500, 1000, 2000, 4000, 8000]
 

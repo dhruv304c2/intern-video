@@ -1,23 +1,14 @@
 """Smallest check that embed_video returns a real, deterministic, unit-norm vector."""
 
 import os
-import sys
 
+import _path
 import numpy as np
 
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ),
-)
-
-from embed import embed_video
+from core.embed import embed_video
 
 FIXTURE = os.path.join(
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ),
+    _path.ROOT,
     "vendor",
     "InternVideo",
     "InternVideo2",

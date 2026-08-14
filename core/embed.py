@@ -20,7 +20,9 @@ import warnings
 import numpy as np
 import torch
 
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
 VENDOR_DIR = os.path.join(
     REPO_ROOT,
     "vendor",

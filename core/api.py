@@ -1,6 +1,6 @@
 """JSON API listing ingested videos and their scene data.
 
-Reads whatever `encoder.ingest` has written into a vector store (see
+Reads whatever `ingest.py` has written into a vector store (see
 vectorstore.VectorStore): the "rd-curve" and "internvideo2" namespaces,
 both always present when ingestion was run with --index. Groups scene
 entries by their source video for display. The frontend/ directory is a
@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from vectorstore import VectorStore
+from core.vectorstore import VectorStore
 
 
 def build_videos(
@@ -24,7 +24,7 @@ def build_videos(
     """Group every ingested scene by source video, joining in its RD curve and embedding status.
 
     `media_root` is the directory clips/thumbnails were written under (see
-    encoder.ingest) - clip/thumbnail paths are rewritten relative to it, as
+    ingest.py) - clip/thumbnail paths are rewritten relative to it, as
     URLs under the /media/ mount `create_app` serves that same directory at.
     """
 

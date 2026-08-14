@@ -2,17 +2,11 @@
 
 import os
 import subprocess
-import sys
 import tempfile
 
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ),
-)
+import _path  # noqa: F401
 
-from encoder.rd_curve import compute_rd_curve
+from core.rd_curve import compute_rd_curve
 
 
 def test_higher_bitrate_gives_higher_or_equal_vmaf():

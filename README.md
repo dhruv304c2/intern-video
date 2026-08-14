@@ -4,44 +4,48 @@ Re-encode a video to H.264/AAC at a given bitrate, via ffmpeg. Also splits a
 video into scenes (PySceneDetect) and encodes each scene as its own clip.
 
 Requires `ffmpeg`/`ffprobe` on `PATH` (e.g. `brew install ffmpeg`) and
-`pip install -r requirements.txt` (PySceneDetect, for `encoder.ingest`).
+`pip install -r requirements.txt` (PySceneDetect, for `ingest.py`).
 
 ### One-time setup for InternVideo2 embeddings
 
-`embed.py` wraps the vendored InternVideo2-Stage2-1B model
+`core/embed.py` wraps the vendored InternVideo2-Stage2-1B model
 (`vendor/InternVideo`) to embed scenes for content-similarity matching. It
 needs its ~2.6GB checkpoint, which isn't in git:
 ```
 python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='OpenGVLab/InternVideo2-Stage2_1B-224p-f4', filename='InternVideo2-stage2_1b-224p-f4.pt', local_dir='weights')"
 ```
-Only needed if you use `embed.py` directly, or `encoder.ingest` with
+Only needed if you use `core/embed.py` directly, or `ingest.py` with
 `--index` (it's the only embedder, so it always runs then); skip it if
-you're only using `encoder.encode`/`encoder.ingest` without `--index`.
+you're only using `core/encode.py`/`ingest.py` without `--index`.
 
 ## Usage
 
 ```
-python -m encoder.encode <video.mp4> <output.mp4> --kbps 2500
+python -m core.encode <video.mp4> <output.mp4> --kbps 2500
 ```
 
 As a library:
 ```python
-from encoder.encode import encode_video
+from core.encode import encode_video
+
 encode_video("video.mp4", "output.mp4", kbps=2500)
 ```
 
 ### Scene-split ingestion
 
 ```
-python -m encoder.ingest <video.mp4> <out_dir> --kbps 2500
+python ingest.py <video.mp4> <out_dir> --kbps 2500
 ```
 Detects scene cuts, then encodes each scene straight from the source in one
 ffmpeg pass (cut + bitrate encode together, no intermediate re-encode).
 
 As a library:
 ```python
-from encoder.ingest import ingest_video
-ingest_video("video.mp4", "out_dir", kbps=2500)  # -> list of clip paths
+from ingest import ingest_video
+
+ingest_video(
+    "video.mp4", "out_dir", kbps=2500
+)  # -> list of clip paths
 ```
 
 Pass `--index <dir>` (or `store=VectorStore(...)` as a library) to also
@@ -51,14 +55,17 @@ only embedder - needs the checkpoint from "One-time setup" above) -
 recording the curve under the `rd-curve` namespace and the embedding under
 `internvideo2`, for content-similarity matching against past scenes:
 ```
-python -m encoder.ingest <video.mp4> <out_dir> --index <index_dir>
+python ingest.py <video.mp4> <out_dir> --index <index_dir>
 ```
 
 ### Rate-distortion curve
 
 ```python
-from encoder.rd_curve import compute_rd_curve
-compute_rd_curve("scene.mp4")  # -> [(500, 82.1), (1000, 91.4), (2000, 96.8), (4000, 98.9), (8000, 99.6)]
+from core.rd_curve import compute_rd_curve
+
+compute_rd_curve(
+    "scene.mp4"
+)  # -> [(500, 82.1), (1000, 91.4), (2000, 96.8), (4000, 98.9), (8000, 99.6)]
 ```
 Encodes the scene at each bitrate rung and measures VMAF against the source
 (ffmpeg's `libvmaf` filter - requires an ffmpeg build with
@@ -70,8 +77,11 @@ for that.
 ### InternVideo2 content embedding
 
 ```python
-from embed import embed_video
-embed_video("scene.mp4")  # -> L2-normalized joint video embedding, shape (512,)
+from core.embed import embed_video
+
+embed_video(
+    "scene.mp4"
+)  # -> L2-normalized joint video embedding, shape (512,)
 ```
 Wraps the vendored model's `get_vid_feat` - the raw video embedding, with no
 text/caption comparison - so it can be dropped into the vector index under
@@ -84,17 +94,23 @@ namespaced per embedder/encoding type (one Chroma collection per namespace);
 within a namespace, search is Chroma's own nearest-neighbor index.
 
 ```python
-from vectorstore import VectorStore
+from core.vectorstore import VectorStore
 
 store = VectorStore("index")
-store.add("clip-embedder", embedding, {"video": "foo.mp4", "scene": 1})
-store.search("clip-embedder", query_embedding, topk=5)  # -> [(metadata, similarity), ...]
+store.add(
+    "clip-embedder",
+    embedding,
+    {"video": "foo.mp4", "scene": 1},
+)
+store.search(
+    "clip-embedder", query_embedding, topk=5
+)  # -> [(metadata, similarity), ...]
 ```
 
 ## API
 
 ```
-python api.py <index_dir_or_url>
+python -m core.api <index_dir_or_url>
 ```
 `<index_dir_or_url>` is either a filesystem path (fine for one-process use,
 e.g. running everything sequentially) or an `http(s)://` URL to a running
@@ -104,8 +120,9 @@ processes - see "Ingest + serve" below for why).
 Serves `GET /videos` at `http://127.0.0.1:8000`, listing every source video
 that's been ingested, with its scene clips, a few thumbnail frames, RD
 curve, and its InternVideo2 embedding status. `clip` and
-`thumbnails` are URLs under the `/media/` mount (also served by `api.py`,
-from `--media-root`, default `scenes` - see "Ingest + serve" below):
+`thumbnails` are URLs under the `/media/` mount (also served by
+`core/api.py`, from `--media-root`, default `scenes` - see "Ingest + serve"
+below):
 ```json
 [
   {
@@ -129,7 +146,7 @@ from `--media-root`, default `scenes` - see "Ingest + serve" below):
 
 `frontend/` is a separate static project (plain HTML/JS, Chart.js via CDN,
 no build step) that fetches from the API above - it's a different origin/
-port, so `api.py` enables CORS for it.
+port, so `core/api.py` enables CORS for it.
 ```
 frontend/serve.sh start
 ```

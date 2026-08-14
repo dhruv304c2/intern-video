@@ -17,7 +17,7 @@ start)
     fi
     source .venv/bin/activate
     start_daemon ingest \
-        python -m encoder.ingest "$video" scenes \
+        python ingest.py "$video" scenes \
         --index http://127.0.0.1:8001
     ;;
 stop)

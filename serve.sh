@@ -10,7 +10,7 @@ source pidlib.sh
 case "${1:-start}" in
 start)
     source .venv/bin/activate
-    start_daemon serve python api.py http://127.0.0.1:8001
+    start_daemon serve python -m core.api http://127.0.0.1:8001
     ;;
 stop)
     stop_daemon serve

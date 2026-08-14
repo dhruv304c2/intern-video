@@ -1,19 +1,11 @@
 """Smallest check that VectorStore namespaces embedders apart and finds the closest match."""
 
-import os
-import sys
 import tempfile
 
+import _path  # noqa: F401
 import numpy as np
 
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ),
-)
-
-from vectorstore import VectorStore
+from core.vectorstore import VectorStore
 
 
 def test_search_returns_closest_match_within_namespace():

@@ -2,21 +2,14 @@
 
 import os
 import subprocess
-import sys
 import tempfile
 
+import _path  # noqa: F401
 from fastapi.testclient import TestClient
 
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ),
-)
-
-from api import create_app
-from encoder.ingest import ingest_video
-from vectorstore import VectorStore
+from core.api import create_app
+from core.vectorstore import VectorStore
+from ingest import ingest_video
 
 
 def test_list_videos_reflects_ingested_scenes():

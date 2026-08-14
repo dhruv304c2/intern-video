@@ -2,17 +2,11 @@
 
 import os
 import subprocess
-import sys
 import tempfile
 
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ),
-)
+import _path  # noqa: F401
 
-from encoder.ingest import ingest_video
+from ingest import ingest_video
 
 
 def test_ingest_splits_scenes():
