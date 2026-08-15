@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from core.vectorstore import VectorStore
+from core.vectorstore import ChromaVectorStore, VectorStore
 
 
 class SceneMeta(TypedDict):
@@ -145,7 +145,7 @@ def main() -> None:
     )
 
     app = create_app(
-        VectorStore(args.index), args.media_root
+        ChromaVectorStore(args.index), args.media_root
     )
     uvicorn.run(app, host=args.host, port=args.port)
 

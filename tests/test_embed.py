@@ -1,11 +1,11 @@
-"""Smallest check that embed_video returns a real, deterministic, unit-norm vector."""
+"""Smallest check that Embedder.embed returns a real, deterministic, unit-norm vector."""
 
 import os
 
 import _path
 import numpy as np
 
-from core.embed import embed_video
+from core.embedder import InternVideo2Embedder
 
 FIXTURE = os.path.join(
     _path.ROOT,
@@ -19,8 +19,9 @@ FIXTURE = os.path.join(
 
 
 def test_embed_video_is_deterministic_unit_vector() -> None:
-    v1 = embed_video(FIXTURE)
-    v2 = embed_video(FIXTURE)
+    embedder = InternVideo2Embedder()
+    v1 = embedder.embed(FIXTURE)
+    v2 = embedder.embed(FIXTURE)
 
     assert v1.shape == v2.shape
     assert v1.size > 0

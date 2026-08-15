@@ -8,15 +8,20 @@ Requires `ffmpeg`/`ffprobe` on `PATH` (e.g. `brew install ffmpeg`) and
 
 ### One-time setup for InternVideo2 embeddings
 
-`core/embed.py` wraps the vendored InternVideo2-Stage2-1B model
+`core/embedder/internvideo2.py` wraps the vendored InternVideo2-Stage2 model
 (`vendor/InternVideo`) to embed scenes for content-similarity matching. It
-needs its ~2.6GB checkpoint, which isn't in git:
+needs a checkpoint, which isn't in git - which one depends on the
+`InternVideo2Embedder(variant=...)` you use (defaults to `"1b"`):
 ```
+# variant="1b" (default) - ~2.6GB
 python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='OpenGVLab/InternVideo2-Stage2_1B-224p-f4', filename='InternVideo2-stage2_1b-224p-f4.pt', local_dir='weights')"
+
+# variant="6b" - ~29GB, only needed if you construct InternVideo2Embedder("6b")
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='OpenGVLab/InternVideo2-Stage2_6B-224p-f4', filename='internvideo2-s2_6b-224p-f4_with_audio_encoder.pt', local_dir='weights')"
 ```
-Only needed if you use `core/embed.py` directly, or `ingest.py` with
-`--index` (it's the only embedder, so it always runs then); skip it if
-you're only using `core/encode.py`/`ingest.py` without `--index`.
+Only needed if you use `core/embedder/` directly, or `ingest.py` with
+`--index` (which always uses the `"1b"` variant); skip it if you're only
+using `core/encode.py`/`ingest.py` without `--index`.
 
 ## Usage
 
@@ -76,12 +81,19 @@ for that.
 
 ### InternVideo2 content embedding
 
-```python
-from core.embed import embed_video
+`core/embedder/` defines the `Embedder` protocol (one method: `embed(video_path) ->
+vector`) and `InternVideo2Embedder`, its only implementation:
 
-embed_video(
+```python
+from core.embedder import InternVideo2Embedder
+
+InternVideo2Embedder().embed(
     "scene.mp4"
 )  # -> L2-normalized joint video embedding, shape (512,)
+
+InternVideo2Embedder(variant="6b").embed(
+    "scene.mp4"
+)  # same shape, larger backbone - needs the 6b checkpoint (see "One-time setup")
 ```
 Wraps the vendored model's `get_vid_feat` - the raw video embedding, with no
 text/caption comparison - so it can be dropped into the vector index under
@@ -92,11 +104,13 @@ its own namespace and matched against other scenes by content similarity.
 Different embedders produce incompatible vector spaces, so the index is
 namespaced per embedder/encoding type (one Chroma collection per namespace);
 within a namespace, search is Chroma's own nearest-neighbor index.
+`core/vectorstore/` defines the `VectorStore` protocol and `ChromaVectorStore`,
+its only implementation:
 
 ```python
-from core.vectorstore import VectorStore
+from core.vectorstore import ChromaVectorStore
 
-store = VectorStore("index")
+store = ChromaVectorStore("index")
 store.add(
     "clip-embedder",
     embedding,

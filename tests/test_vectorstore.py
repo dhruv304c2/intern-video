@@ -5,14 +5,14 @@ import tempfile
 import _path  # noqa: F401
 import numpy as np
 
-from core.vectorstore import VectorStore
+from core.vectorstore import ChromaVectorStore
 
 
 def test_search_returns_closest_match_within_namespace() -> (
     None
 ):
     with tempfile.TemporaryDirectory() as tmp:
-        store = VectorStore(tmp)
+        store = ChromaVectorStore(tmp)
         store.add(
             "clip-embedder",
             np.array([1.0, 0.0]),
@@ -47,7 +47,7 @@ def test_search_returns_closest_match_within_namespace() -> (
 def test_search_on_empty_namespace_returns_empty() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         assert (
-            VectorStore(tmp).search(
+            ChromaVectorStore(tmp).search(
                 "nothing-here", np.array([1.0, 0.0])
             )
             == []

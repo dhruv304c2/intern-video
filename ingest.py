@@ -8,13 +8,13 @@ from scenedetect import ContentDetector, detect
 
 from core.encode import encode_video
 from core.rd_curve import compute_rd_curve
-from core.vectorstore import VectorStore
+from core.vectorstore import ChromaVectorStore, VectorStore
 
-# captured before the core.embed import below, which changes the
+# captured before the core.embedder import below, which changes the
 # process's cwd as a side effect of loading the vendored model config
 _ORIG_CWD = os.getcwd()
 
-from core.embed import embed_video
+from core.embedder import Embedder, InternVideo2Embedder
 
 THUMBNAIL_FRACTIONS = [0.25, 0.5, 0.75]
 
@@ -66,17 +66,21 @@ def ingest_video(
     out_dir: str,
     kbps: int = 2500,
     store: VectorStore | None = None,
+    embedder: Embedder | None = None,
 ) -> list[str]:
     """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
 
     If `store` is given, also computes each scene's rate-distortion curve (see
     rd_curve.py), adds it to the store's "rd-curve" namespace, and embeds
-    the scene with InternVideo2 (see embed.py) into the store's "internvideo2"
-    namespace - the only embedder used, so this always runs when a store is
-    given, requiring the checkpoint (see README "One-time setup").
+    the scene (with `embedder`, defaulting to InternVideo2 - see
+    core/embedder/) into the store's "internvideo2" namespace - always runs
+    when a store is given, requiring the checkpoint (see README "One-time
+    setup") unless a different `embedder` is passed in.
     """
-    # core.embed (imported above) has already changed the process's cwd
-    # by this point - resolve against the original cwd, not the current one.
+    if store is not None and embedder is None:
+        embedder = InternVideo2Embedder()
+    # core.embedder (imported above) has already changed the process's
+    # cwd by this point - resolve against the original cwd, not the current one.
     video_path = os.path.abspath(
         os.path.join(_ORIG_CWD, video_path)
     )
@@ -111,6 +115,7 @@ def ingest_video(
         outputs.append(out_path)
 
         if store is not None:
+            assert embedder is not None
             print(
                 f"[{i}/{n}] extracting thumbnails",
                 flush=True,
@@ -142,7 +147,7 @@ def ingest_video(
             )
             store.add(
                 "internvideo2",
-                embed_video(out_path),
+                embedder.embed(out_path),
                 scene_meta,
             )
     return outputs
@@ -169,7 +174,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    store = VectorStore(args.index) if args.index else None
+    store = (
+        ChromaVectorStore(args.index)
+        if args.index
+        else None
+    )
     outputs = ingest_video(
         args.video,
         args.out_dir,

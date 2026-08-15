@@ -8,7 +8,7 @@ import _path  # noqa: F401
 from fastapi.testclient import TestClient
 
 from core.api import create_app
-from core.vectorstore import VectorStore
+from core.vectorstore import ChromaVectorStore
 from ingest import ingest_video
 
 
@@ -36,7 +36,9 @@ def test_list_videos_reflects_ingested_scenes() -> None:
         )
 
         scenes_dir = os.path.join(tmp, "scenes")
-        store = VectorStore(os.path.join(tmp, "index"))
+        store = ChromaVectorStore(
+            os.path.join(tmp, "index")
+        )
         ingest_video(src, scenes_dir, kbps=500, store=store)
 
         client = TestClient(

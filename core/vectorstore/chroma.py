@@ -1,12 +1,4 @@
-"""On-disk vector index, namespaced per embedder, backed by Chroma.
-
-Different encoders/embedders produce incompatible vector spaces (different
-dims, different meanings) - so "multiple levels of indexing" means: namespace
-by embedder/encoding type first (one Chroma collection per namespace), then
-nearest-neighbor search within that namespace (Chroma's own ANN index). A new
-scene is matched by embedding it with a given embedder and searching only
-that embedder's namespace/collection.
-"""
+"""Chroma-backed VectorStore (see protocol.py) - one Chroma collection per namespace."""
 
 import uuid
 from urllib.parse import urlparse
@@ -17,7 +9,7 @@ import numpy.typing as npt
 from chromadb.api import ClientAPI
 
 
-class VectorStore:
+class ChromaVectorStore:
     def __init__(self, root: str) -> None:
         """`root` is either a filesystem path (single-process use, e.g.
         tests) or an http(s):// URL pointing at a running `chroma run`
@@ -52,7 +44,6 @@ class VectorStore:
         vector: npt.ArrayLike,
         metadata: chromadb.Metadata,
     ) -> None:
-        """Append one embedding + its metadata to `namespace`'s index."""
         vector = np.asarray(
             vector, dtype=np.float32
         ).reshape(-1)
@@ -68,7 +59,6 @@ class VectorStore:
         query: npt.ArrayLike,
         topk: int = 5,
     ) -> list[tuple[chromadb.Metadata, float]]:
-        """Return up to `topk` (metadata, cosine_similarity) pairs for `namespace`, best match first."""
         query = np.asarray(query, dtype=np.float32).reshape(
             -1
         )
@@ -95,7 +85,6 @@ class VectorStore:
     def list_all(
         self, namespace: str
     ) -> list[tuple[chromadb.Metadata, list[float]]]:
-        """Return every (metadata, vector) pair stored in `namespace`, in no particular order."""
         collection = self._collection(namespace)
         if collection.count() == 0:
             return []
