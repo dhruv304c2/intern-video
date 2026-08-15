@@ -53,14 +53,33 @@ ingest_video(
 )  # -> list of clip paths
 ```
 
-Pass `--index <dir>` (or `store=VectorStore(...)` as a library) to also
+Pass `--index <dir>` (or `anns=[...]` as a library - a list of
+`core.indexing.Ann(namespace, embedder, store)`, one per ann table) to also
 extract a few thumbnail frames per scene (`<clip>-thumb-N.jpg`, alongside the
-clip), compute its rate-distortion curve, and embed it with InternVideo2 (the
-only embedder - needs the checkpoint from "One-time setup" above) -
-recording the curve under the `rd-curve` namespace and the embedding under
-`internvideo2`, for content-similarity matching against past scenes:
+clip) and, for each ann, embed the scene and record it under that ann's
+namespace, for lookups against past scenes. `--index <dir>` wires up two
+anns against a single `ChromaVectorStore(<dir>)`: `"internvideo2"`
+(`InternVideo2Embedder` - needs the checkpoint from "One-time setup" above)
+and `"rd-curve"` (`RdCurveEmbedder` - see "Content embedders" below):
 ```
 python ingest.py <video.mp4> <out_dir> --index <index_dir>
+```
+As a library, with your own anns:
+```python
+from core.embedder import InternVideo2Embedder, RdCurveEmbedder
+from core.indexing import Ann
+from core.vectorstore import ChromaVectorStore
+from ingest import ingest_video
+
+store = ChromaVectorStore("index_dir")
+ingest_video(
+    "video.mp4",
+    "out_dir",
+    anns=[
+        Ann("internvideo2", InternVideo2Embedder(), store),
+        Ann("rd-curve", RdCurveEmbedder(), store),
+    ],
+)
 ```
 
 ### Rate-distortion curve
@@ -74,18 +93,17 @@ compute_rd_curve(
 ```
 Encodes the scene at each bitrate rung and measures VMAF against the source
 (ffmpeg's `libvmaf` filter - requires an ffmpeg build with
-`--enable-libvmaf`, no separate quality model to install). This is recorded
-per scene for display (see "API" below) - it's not used for
-content-similarity matching. InternVideo2 (below) is the only embedding used
-for that.
+`--enable-libvmaf`, no separate quality model to install). Recorded per
+scene for display (see "API" below); `RdCurveEmbedder` (below) also wraps
+this as a mock ann for lookups against past scenes' rate-distortion shape.
 
-### InternVideo2 content embedding
+### Content embedders
 
 `core/embedder/` defines the `Embedder` protocol (one method: `embed(video_path) ->
-vector`) and `InternVideo2Embedder`, its only implementation:
+vector`) and two implementations:
 
 ```python
-from core.embedder import InternVideo2Embedder
+from core.embedder import InternVideo2Embedder, RdCurveEmbedder
 
 InternVideo2Embedder().embed(
     "scene.mp4"
@@ -94,10 +112,18 @@ InternVideo2Embedder().embed(
 InternVideo2Embedder(variant="6b").embed(
     "scene.mp4"
 )  # same shape, larger backbone - needs the 6b checkpoint (see "One-time setup")
+
+RdCurveEmbedder().embed(
+    "scene.mp4"
+)  # -> VMAF at each of DEFAULT_KBPS_RUNGS, shape (5,)
 ```
-Wraps the vendored model's `get_vid_feat` - the raw video embedding, with no
-text/caption comparison - so it can be dropped into the vector index under
-its own namespace and matched against other scenes by content similarity.
+`InternVideo2Embedder` wraps the vendored model's `get_vid_feat` - the raw
+video embedding, with no text/caption comparison. `RdCurveEmbedder` is a
+mock embedder: it just runs `compute_rd_curve` (above) and returns the VMAF
+values as the vector, so a scene's rate-distortion curve can be indexed the
+same way as a real content embedding. Either can be dropped into the vector
+index under its own namespace (see "Anns" below) and matched against other
+scenes by similarity.
 
 ### Vector index
 
@@ -120,6 +146,30 @@ store.search(
     "clip-embedder", query_embedding, topk=5
 )  # -> [(metadata, similarity), ...]
 ```
+
+### Anns
+
+`core/indexing/` ties a namespace to the embedder and store its vectors
+belong to - an `Ann(namespace, embedder, store)` - so `ingest.py` can index
+a scene into any number of these "ann tables" without knowing which
+embedders or stores they use:
+
+```python
+from core.embedder import InternVideo2Embedder, RdCurveEmbedder
+from core.indexing import Ann, index_scene
+from core.vectorstore import ChromaVectorStore
+
+store = ChromaVectorStore("index_dir")
+anns = [
+    Ann("internvideo2", InternVideo2Embedder(), store),
+    Ann("rd-curve", RdCurveEmbedder(), store),
+]
+index_scene(clip, anns)  # embeds `clip` under every ann, into its store/namespace
+```
+Anns can share a store (as above, one Chroma index with two namespaces) or
+use different stores entirely - `index_scene` only cares that each ann
+pairs a namespace with something that can `embed()` and something that can
+`add()`.
 
 ## API
 

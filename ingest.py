@@ -6,15 +6,18 @@ import os
 from scenedetect import ContentDetector, detect
 
 from core.encode import encode_video
-from core.vectorstore import ChromaVectorStore, VectorStore
+from core.vectorstore import ChromaVectorStore
 
 # captured before the core.indexing import below, which transitively imports
 # core.embedder - changing the process's cwd as a side effect of loading
 # the vendored model config
 _ORIG_CWD = os.getcwd()
 
-from core.embedder import Embedder
-from core.indexing import SceneClip, index_scene
+from core.embedder import (
+    InternVideo2Embedder,
+    RdCurveEmbedder,
+)
+from core.indexing import Ann, SceneClip, index_scene
 
 
 def split_scenes(
@@ -72,20 +75,18 @@ def ingest_video(
     video_path: str,
     out_dir: str,
     kbps: int = 2500,
-    store: VectorStore | None = None,
-    embedder: Embedder | None = None,
+    anns: list[Ann] | None = None,
 ) -> list[str]:
     """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
 
-    If `store` is given, also indexes each scene into it (see
-    core/indexing.py::index_scene) - always runs when a store is given,
-    requiring the InternVideo2 checkpoint (see README "One-time setup")
-    unless a different `embedder` is passed in.
+    If `anns` is given, also indexes each scene into every ann in it (see
+    core/indexing/index.py::index_scene) - one embedding + store write per
+    ann, per scene.
     """
     clips = split_scenes(video_path, out_dir, kbps=kbps)
-    if store is not None:
+    if anns:
         for clip in clips:
-            index_scene(clip, store, embedder)
+            index_scene(clip, anns)
     return [clip.path for clip in clips]
 
 
@@ -110,16 +111,19 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    store = (
-        ChromaVectorStore(args.index)
-        if args.index
-        else None
-    )
+    anns = None
+    if args.index:
+        store = ChromaVectorStore(args.index)
+        anns = [
+            Ann(
+                "internvideo2",
+                InternVideo2Embedder(),
+                store,
+            ),
+            Ann("rd-curve", RdCurveEmbedder(), store),
+        ]
     outputs = ingest_video(
-        args.video,
-        args.out_dir,
-        kbps=args.kbps,
-        store=store,
+        args.video, args.out_dir, kbps=args.kbps, anns=anns
     )
     print(
         f"wrote {len(outputs)} scene clips to {args.out_dir}"

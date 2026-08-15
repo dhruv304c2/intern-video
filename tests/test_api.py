@@ -8,6 +8,11 @@ import _path  # noqa: F401
 from fastapi.testclient import TestClient
 
 from core.api import create_app
+from core.embedder import (
+    InternVideo2Embedder,
+    RdCurveEmbedder,
+)
+from core.indexing import Ann
 from core.vectorstore import ChromaVectorStore
 from ingest import ingest_video
 
@@ -39,7 +44,15 @@ def test_list_videos_reflects_ingested_scenes() -> None:
         store = ChromaVectorStore(
             os.path.join(tmp, "index")
         )
-        ingest_video(src, scenes_dir, kbps=500, store=store)
+        anns = [
+            Ann(
+                "internvideo2",
+                InternVideo2Embedder(),
+                store,
+            ),
+            Ann("rd-curve", RdCurveEmbedder(), store),
+        ]
+        ingest_video(src, scenes_dir, kbps=500, anns=anns)
 
         client = TestClient(
             create_app(store, media_root=scenes_dir)

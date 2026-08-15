@@ -9,13 +9,14 @@ separate project that consumes this API over HTTP - see frontend/app.js.
 
 import argparse
 import os
-from typing import NotRequired, TypedDict, cast
+from typing import TypedDict, cast
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from core.rd_curve import DEFAULT_KBPS_RUNGS
 from core.vectorstore import ChromaVectorStore, VectorStore
 
 
@@ -29,8 +30,6 @@ class SceneMeta(TypedDict):
     start: float
     end: float
     thumbnails: list[str]
-    # only present on "rd-curve" namespace entries, not "internvideo2"
-    kbps_rungs: NotRequired[list[int]]
 
 
 def build_videos(
@@ -77,7 +76,7 @@ def build_videos(
                     for t in meta.get("thumbnails", [])
                 ],
                 "rd_curve": {
-                    "kbps": meta.get("kbps_rungs", []),
+                    "kbps": DEFAULT_KBPS_RUNGS,
                     "vmaf": vector,
                 },
                 "embedding": embedding_by_clip.get(
