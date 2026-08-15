@@ -2,84 +2,28 @@
 
 import argparse
 import os
-import subprocess
 
 from scenedetect import ContentDetector, detect
 
 from core.encode import encode_video
-from core.rd_curve import compute_rd_curve
 from core.vectorstore import ChromaVectorStore, VectorStore
 
-# captured before the core.embedder import below, which changes the
-# process's cwd as a side effect of loading the vendored model config
+# captured before the core.indexing import below, which transitively imports
+# core.embedder - changing the process's cwd as a side effect of loading
+# the vendored model config
 _ORIG_CWD = os.getcwd()
 
-from core.embedder import Embedder, InternVideo2Embedder
-
-THUMBNAIL_FRACTIONS = [0.25, 0.5, 0.75]
-
-
-def extract_thumbnails(clip_path: str) -> list[str]:
-    """Grab a few still frames from `clip_path`, written alongside it as `<clip>-thumb-N.jpg`."""
-    duration = float(
-        subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                clip_path,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-    )
-    stem = os.path.splitext(clip_path)[0]
-    paths = []
-    for i, frac in enumerate(THUMBNAIL_FRACTIONS, start=1):
-        out_path = f"{stem}-thumb-{i}.jpg"
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(duration * frac),
-                "-i",
-                clip_path,
-                "-frames:v",
-                "1",
-                out_path,
-            ],
-            check=True,
-            capture_output=True,
-        )
-        paths.append(out_path)
-    return paths
+from core.embedder import Embedder
+from core.indexing import SceneClip, index_scene
 
 
-def ingest_video(
+def split_scenes(
     video_path: str,
     out_dir: str,
     kbps: int = 2500,
-    store: VectorStore | None = None,
-    embedder: Embedder | None = None,
-) -> list[str]:
-    """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
-
-    If `store` is given, also computes each scene's rate-distortion curve (see
-    rd_curve.py), adds it to the store's "rd-curve" namespace, and embeds
-    the scene (with `embedder`, defaulting to InternVideo2 - see
-    core/embedder/) into the store's "internvideo2" namespace - always runs
-    when a store is given, requiring the checkpoint (see README "One-time
-    setup") unless a different `embedder` is passed in.
-    """
-    if store is not None and embedder is None:
-        embedder = InternVideo2Embedder()
-    # core.embedder (imported above) has already changed the process's
+) -> list[SceneClip]:
+    """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`."""
+    # core.indexing (imported above) has already changed the process's
     # cwd by this point - resolve against the original cwd, not the current one.
     video_path = os.path.abspath(
         os.path.join(_ORIG_CWD, video_path)
@@ -95,7 +39,7 @@ def ingest_video(
     n = len(scene_list)
     print(f"{base}: {n} scene(s) detected", flush=True)
 
-    outputs = []
+    clips = []
     for i, (start, end) in enumerate(scene_list, start=1):
         out_path = os.path.join(
             out_dir, f"{base}-Scene-{i:03d}.mp4"
@@ -112,45 +56,37 @@ def ingest_video(
             start=start_s,
             end=end_s,
         )
-        outputs.append(out_path)
+        clips.append(
+            SceneClip(
+                out_path,
+                base,
+                i,
+                start_s or 0.0,
+                end_s or 0.0,
+            )
+        )
+    return clips
 
-        if store is not None:
-            assert embedder is not None
-            print(
-                f"[{i}/{n}] extracting thumbnails",
-                flush=True,
-            )
-            scene_meta = {
-                "clip": out_path,
-                "source_video": base,
-                "scene": i,
-                "start": start_s or 0.0,
-                "end": end_s or 0.0,
-                "thumbnails": extract_thumbnails(out_path),
-            }
-            print(
-                f"[{i}/{n}] computing rate-distortion curve",
-                flush=True,
-            )
-            curve = compute_rd_curve(out_path)
-            store.add(
-                "rd-curve",
-                [vmaf for _, vmaf in curve],
-                {
-                    **scene_meta,
-                    "kbps_rungs": [k for k, _ in curve],
-                },
-            )
-            print(
-                f"[{i}/{n}] embedding with InternVideo2",
-                flush=True,
-            )
-            store.add(
-                "internvideo2",
-                embedder.embed(out_path),
-                scene_meta,
-            )
-    return outputs
+
+def ingest_video(
+    video_path: str,
+    out_dir: str,
+    kbps: int = 2500,
+    store: VectorStore | None = None,
+    embedder: Embedder | None = None,
+) -> list[str]:
+    """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
+
+    If `store` is given, also indexes each scene into it (see
+    core/indexing.py::index_scene) - always runs when a store is given,
+    requiring the InternVideo2 checkpoint (see README "One-time setup")
+    unless a different `embedder` is passed in.
+    """
+    clips = split_scenes(video_path, out_dir, kbps=kbps)
+    if store is not None:
+        for clip in clips:
+            index_scene(clip, store, embedder)
+    return [clip.path for clip in clips]
 
 
 def main() -> None:
