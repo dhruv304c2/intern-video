@@ -152,7 +152,8 @@ store.search(
 `core/indexing/` ties a namespace to the embedder and store its vectors
 belong to - an `Ann(namespace, embedder, store)` - so `ingest.py` can index
 a scene into any number of these "ann tables" without knowing which
-embedders or stores they use:
+embedders or stores they use. `Ann.record(clip_path, metadata)` embeds and
+stores in one call; `index_scene` just calls it per ann:
 
 ```python
 from core.embedder import InternVideo2Embedder, RdCurveEmbedder
@@ -164,12 +165,12 @@ anns = [
     Ann("internvideo2", InternVideo2Embedder(), store),
     Ann("rd-curve", RdCurveEmbedder(), store),
 ]
-index_scene(clip, anns)  # embeds `clip` under every ann, into its store/namespace
+anns[0].record("scene.mp4", {"scene": 1})  # embeds + stores under "internvideo2"
+index_scene(clip, anns)  # calls .record(...) on every ann in the list
 ```
 Anns can share a store (as above, one Chroma index with two namespaces) or
-use different stores entirely - `index_scene` only cares that each ann
-pairs a namespace with something that can `embed()` and something that can
-`add()`.
+use different stores entirely - `index_scene` only cares that each ann can
+`record()` a clip.
 
 ## API
 

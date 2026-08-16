@@ -21,8 +21,4 @@ def index_scene(clip: SceneClip, anns: list[Ann]) -> None:
             f"[scene {clip.scene}] embedding for {ann.namespace!r}",
             flush=True,
         )
-        ann.store.add(
-            ann.namespace,
-            ann.embedder.embed(clip.path),
-            scene_meta,
-        )
+        ann.record(clip.path, scene_meta)
