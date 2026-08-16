@@ -3,4 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-.venv/bin/python main.py datasets/index_videos.csv datasets/query_videos.csv
+MAX_SCENES="${MAX_SCENES:-50}"
+
+.venv/bin/python main.py datasets/index_videos.csv datasets/query_videos.csv \
+    --max-scenes "$MAX_SCENES" "$@"

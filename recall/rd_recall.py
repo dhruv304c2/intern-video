@@ -31,10 +31,12 @@ class RDRecallTest:
         video_dir: str = ".cache/recall/videos",
         scenes_dir: str = ".cache/recall/scenes",
         cache_path: str = ".cache/recall/indexed_urls.json",
+        max_scenes: int = 50,
     ) -> None:
-        """`retriever` supplies content-similarity neighbors (build it from content collections only - e.g. `RRFRetriever([internvideo2_collection])` - not the rd-curve collection, or RD-curve similarity would leak into neighbor selection); RD-curve similarity between a query and each neighbor is computed directly (no index/search on the RD side). `loader` downloads each dataset URL (parsed from the CSVs passed to `run()`) before it's split into scenes. `cache_path` records which index-set URLs have already been indexed, so a later `run()` skips re-downloading/re-splitting/re-indexing them - see `_index_videos`."""
+        """`retriever` supplies content-similarity neighbors (build it from content collections only - e.g. `RRFRetriever([internvideo2_collection])` - not the rd-curve collection, or RD-curve similarity would leak into neighbor selection); RD-curve similarity between a query and each neighbor is computed directly (no index/search on the RD side). `loader` downloads each dataset URL (parsed from the CSVs passed to `run()`) before it's split into scenes. `cache_path` records which index-set URLs have already been indexed, so a later `run()` skips re-downloading/re-splitting/re-indexing them - see `_index_videos`. `max_scenes` caps how many scenes each video is split into (see `core.ingest.split_scenes`)."""
         self.retriever = retriever
         self.loader = loader
+        self.max_scenes = max_scenes
         # core.embedder.internvideo2 (imported transitively above) changes
         # the process's cwd as a side effect of loading the vendored model
         # config - resolve these user-supplied paths against the original
@@ -188,7 +190,9 @@ class RDRecallTest:
                 url, self.video_dir
             )
             scenes = split_scenes(
-                video_path, self.scenes_dir
+                video_path,
+                self.scenes_dir,
+                max_scenes=self.max_scenes,
             )
             print(
                 f"[video {i}/{n}] {label} {len(scenes)} scene(s)",
