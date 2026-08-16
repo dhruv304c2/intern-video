@@ -32,7 +32,7 @@ class VectorStore(Protocol):
         vector: npt.ArrayLike,
         metadata: Metadata,
     ) -> None:
-        """Append one embedding + its metadata to `namespace`'s index."""
+        """Add one embedding + its metadata to `namespace`'s index. If `metadata` has a "clip" key, re-adding the same clip replaces its existing entry rather than duplicating it."""
         ...
 
     def search(

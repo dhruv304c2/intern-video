@@ -50,8 +50,18 @@ class ChromaVectorStore:
         vector = np.asarray(
             vector, dtype=np.float32
         ).reshape(-1)
-        self._collection(namespace).add(
-            ids=[str(uuid.uuid4())],
+        # ponytail: id by clip path (when present) so re-indexing the same
+        # clip (e.g. an interrupted/re-run ingest) overwrites rather than
+        # duplicates its entry - falls back to a random id for metadata
+        # with no "clip" key.
+        clip = metadata.get("clip")
+        doc_id = (
+            str(clip)
+            if clip is not None
+            else str(uuid.uuid4())
+        )
+        self._collection(namespace).upsert(
+            ids=[doc_id],
             embeddings=[vector.tolist()],
             metadatas=[metadata],
         )
