@@ -1,8 +1,8 @@
 """HTML report for RDRecallTest: thumbnails + RD-curve comparison per query/neighbor pair."""
 
+import base64
 import html
 import os
-from pathlib import Path
 from typing import NamedTuple
 
 RDCurve = list[tuple[int, float]]
@@ -92,9 +92,11 @@ def _curve_table(curve: RDCurve) -> str:
 
 
 def _thumbnail_uri(clip_path: str) -> str:
-    """Middle extracted thumbnail for `clip_path` (see `core.indexing.meta.extract_thumbnails`), as a file:// URI."""
+    """Middle extracted thumbnail for `clip_path` (see `core.indexing.meta.extract_thumbnails`), inlined as a base64 data URI so the report is portable/self-contained."""
     stem = os.path.splitext(clip_path)[0]
-    return Path(f"{stem}-thumb-2.jpg").resolve().as_uri()
+    with open(f"{stem}-thumb-2.jpg", "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 _CSS = (
