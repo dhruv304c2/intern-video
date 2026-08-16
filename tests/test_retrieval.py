@@ -1,4 +1,4 @@
-"""Smallest check that Retriever.retrieve returns an indexed scene as its own top match."""
+"""Smallest check that Collection.search returns an indexed scene as its own top match."""
 
 import os
 import subprocess
@@ -6,8 +6,13 @@ import tempfile
 
 import _path  # noqa: F401
 
-from core.ingest import ingest_video
-from core.retrieval import build_pipeline
+from core.embedder import (
+    InternVideo2Embedder,
+    RdCurveEmbedder,
+)
+from core.indexing import Collection
+from core.ingest import split_scenes
+from core.retrieval import RRFRetriever
 from core.vectorstore import ChromaVectorStore
 
 
@@ -38,12 +43,32 @@ def test_find_similar_returns_self_as_top_match() -> None:
         store = ChromaVectorStore(
             os.path.join(tmp, "index")
         )
-        indexer, retriever = build_pipeline(store)
-        outputs = ingest_video(
-            src, scenes_dir, kbps=500, indexer=indexer
-        )
+        internvideo2 = InternVideo2Embedder()
+        rd_curve = RdCurveEmbedder()
+        collections = [
+            Collection.symmetric(
+                namespace="internvideo2",
+                embedder=internvideo2,
+                store=store,
+            ),
+            Collection.symmetric(
+                namespace="rd-curve",
+                embedder=rd_curve,
+                store=store,
+            ),
+        ]
+        retriever = RRFRetriever(collections)
+        clips = split_scenes(src, scenes_dir, kbps=500)
+        for clip in clips:
+            retriever.index_scene(clip)
+        outputs = [clip.path for clip in clips]
 
-        results = retriever.retrieve(outputs[0], topk=5)
+        results = {
+            collection.namespace: collection.search(
+                outputs[0], topk=5
+            )
+            for collection in collections
+        }
 
         assert set(results) == {"internvideo2", "rd-curve"}
         for matches in results.values():
@@ -52,6 +77,13 @@ def test_find_similar_returns_self_as_top_match() -> None:
             assert top_meta["clip"] == outputs[0]
             assert top_similarity > 0.99
         print(f"OK: self is top match in {list(results)}")
+
+        fused = retriever.retrieve(outputs[0], topk=5)
+        assert fused
+        assert fused[0][0] == outputs[0]
+        print(
+            f"OK: RRF fused top match is self: {fused[0]}"
+        )
 
 
 if __name__ == "__main__":

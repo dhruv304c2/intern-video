@@ -1,10 +1,8 @@
-from core.indexing.ann import Ann, default_anns
-from core.indexing.index import Indexer
-from core.indexing.meta import SceneClip
+from core.indexing.collection import Collection
+from core.indexing.meta import SceneClip, build_scene_meta
 
 __all__ = [
-    "Ann",
-    "Indexer",
+    "Collection",
     "SceneClip",
-    "default_anns",
+    "build_scene_meta",
 ]

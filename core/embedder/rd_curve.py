@@ -2,7 +2,7 @@
 
 Not a real content embedding - just fits compute_rd_curve (core/rd_curve.py)
 into the Embedder protocol so a scene's VMAF-vs-bitrate curve can be
-recorded as its own ann (see core/indexing/) alongside real embedders like
+recorded as its own collection (see core/indexing/) alongside real embedders like
 InternVideo2Embedder.
 """
 

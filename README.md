@@ -21,7 +21,7 @@ python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id=
 ```
 Only needed if you use `core/embedder/` directly, or `main.py` (which
 always indexes, using the `"1b"` variant); skip it if you're only using
-`core/encode.py`/`core/ingest.py` as a library without an `indexer`.
+`core/encode.py`/`core/ingest.py` as a library without a retriever.
 
 ## Usage
 
@@ -38,47 +38,56 @@ encode_video("video.mp4", "output.mp4", kbps=2500)
 
 ### Scene-split ingestion
 
-`core/ingest.py` is a pure library (`split_scenes`, `ingest_video`) -
-`main.py` is the CLI entry point: it builds the default `Indexer`/`Retriever`
-pair (see "Pipeline" below) against `ChromaVectorStore(".cache/index")` and
-runs ingestion through it, writing scene clips to `.cache/scenes`:
+`core/ingest.py` is a pure library (`split_scenes`) - `main.py` is the CLI
+entry point: it builds an `RRFRetriever` (see "Multi-collection retrieval"
+below) over an `"internvideo2"` collection against
+`ChromaVectorStore(".cache/index")`, then runs `RDRecallTest` (see
+"RD-curve recall" below) over an index/query CSV pair of YouTube URLs and
+prints the mean score - `RDRecallTest` parses both CSVs, then downloads,
+splits, and indexes the index-set URLs, and downloads, splits (but doesn't
+index) the query-set URLs:
 ```
-python main.py <video.mp4>
+python main.py <index_videos.csv> <query_videos.csv>
+```
+Or, against the sample sets in `datasets/`:
+```
+./run-recall.sh
 ```
 Detects scene cuts, then encodes each scene straight from the source in one
 ffmpeg pass (cut + bitrate encode together, no intermediate re-encode), then
 extracts a few thumbnail frames per scene (`<clip>-thumb-N.jpg`, alongside
-the clip) and, for each ann, embeds the scene and records it under that
-ann's namespace, for lookups against past scenes: `"internvideo2"`
-(`InternVideo2Embedder` - needs the checkpoint from "One-time setup" above)
-and `"rd-curve"` (`RdCurveEmbedder` - see "Content embedders" below).
+the clip) and embeds it with `InternVideo2Embedder` (needs the checkpoint
+from "One-time setup" above) for lookups against past scenes.
 
-As a library (`indexer` is optional - omit it to skip indexing):
+As a library (indexing is optional - skip the `retriever.index_scene` loop to
+just split scenes):
 ```python
-from core.ingest import ingest_video
+from core.ingest import split_scenes
 
-ingest_video(
+clips = split_scenes(
     "video.mp4", "out_dir", kbps=2500
-)  # -> list of clip paths
+)  # -> list of SceneClip
 ```
-With your own anns (an `core.indexing.Indexer(anns)` - see "Anns" below):
+With your own collections (see "Collections" and "Multi-collection
+retrieval" below):
 ```python
 from core.embedder import InternVideo2Embedder, RdCurveEmbedder
-from core.indexing import Ann, Indexer
+from core.indexing import Collection
+from core.retrieval import RRFRetriever
 from core.vectorstore import ChromaVectorStore
-from core.ingest import ingest_video
+from core.ingest import split_scenes
 
 store = ChromaVectorStore("index_dir")
-ingest_video(
-    "video.mp4",
-    "out_dir",
-    indexer=Indexer(
-        [
-            Ann("internvideo2", InternVideo2Embedder(), store),
-            Ann("rd-curve", RdCurveEmbedder(), store),
-        ]
-    ),
+internvideo2 = InternVideo2Embedder()
+rd_curve = RdCurveEmbedder()
+retriever = RRFRetriever(
+    [
+        Collection.symmetric("internvideo2", internvideo2, store),
+        Collection.symmetric("rd-curve", rd_curve, store),
+    ]
 )
+for clip in split_scenes("video.mp4", "out_dir"):
+    retriever.index_scene(clip)
 ```
 
 ### Rate-distortion curve
@@ -93,7 +102,7 @@ compute_rd_curve(
 Encodes the scene at each bitrate rung and measures VMAF against the source
 (ffmpeg's `libvmaf` filter - requires an ffmpeg build with
 `--enable-libvmaf`, no separate quality model to install). `RdCurveEmbedder`
-(below) wraps this as a mock ann for lookups against past scenes'
+(below) wraps this as a mock collection for lookups against past scenes'
 rate-distortion shape.
 
 ### Content embedders
@@ -121,7 +130,7 @@ video embedding, with no text/caption comparison. `RdCurveEmbedder` is a
 mock embedder: it just runs `compute_rd_curve` (above) and returns the VMAF
 values as the vector, so a scene's rate-distortion curve can be indexed the
 same way as a real content embedding. Either can be dropped into the vector
-index under its own namespace (see "Anns" below) and matched against other
+index under its own namespace (see "Collections" below) and matched against other
 scenes by similarity.
 
 ### Vector index
@@ -146,48 +155,90 @@ store.search(
 )  # -> [(metadata, similarity), ...]
 ```
 
-### Anns
+### Collections
 
-`core/indexing/` ties a namespace to the embedder and store its vectors
-belong to - an `Ann(namespace, embedder, store)` - so ingestion can index a
-scene into any number of these "ann tables" without knowing which embedders
-or stores they use. `Ann.record(clip_path, metadata)` embeds and stores in
-one call:
+`core/indexing/` ties a namespace to the embedders and store its vectors
+belong to - a `Collection(namespace, index_embedder, query_embedder,
+store)` - so ingestion can index a scene into any number of these
+collections without knowing which embedders or stores they use. Separate
+index/query embedders support asymmetric encoders (e.g. a dual-encoder with
+distinct passage/query models); `Collection.symmetric(namespace, embedder,
+store)` fills both with the same embedder, for the common case where
+indexing and querying share an embedding space, as `InternVideo2Embedder`
+and `RdCurveEmbedder` do here. `Collection.record(clip_path, metadata)`
+embeds (with the index embedder) and stores in one call:
 
 ```python
 from core.embedder import InternVideo2Embedder, RdCurveEmbedder
-from core.indexing import Ann
+from core.indexing import Collection
 from core.vectorstore import ChromaVectorStore
 
 store = ChromaVectorStore("index_dir")
-anns = [
-    Ann("internvideo2", InternVideo2Embedder(), store),
-    Ann("rd-curve", RdCurveEmbedder(), store),
+internvideo2 = InternVideo2Embedder()
+rd_curve = RdCurveEmbedder()
+collections = [
+    Collection.symmetric("internvideo2", internvideo2, store),
+    Collection.symmetric("rd-curve", rd_curve, store),
 ]
-anns[0].record("scene.mp4", {"scene": 1})  # embeds + stores under "internvideo2"
+collections[0].record("scene.mp4", {"scene": 1})  # embeds + stores under "internvideo2"
 ```
-Anns can share a store (as above, one Chroma index with two namespaces) or
-use different stores entirely - an `Indexer` (below) only cares that each
-ann can `record()` a clip.
+Collections can share a store (as above, one Chroma index with two
+namespaces) or use different stores entirely - each collection only needs
+to support `record()`/`search()` independently.
 
-### Pipeline
+### Multi-collection retrieval
 
-`Indexer(anns)`/`Retriever(anns)` (`core/indexing/index.py`,
-`core/retrieval.py`) so callers don't pass `anns` around by hand:
-`indexer.index_scene(clip)` / `retriever.retrieve(clip_path, topk=5)`.
-`build_pipeline(store)` builds the default `Indexer`/`Retriever` pair off
-`core.indexing.default_anns(store)`, sharing the same anns so what's indexed
-is exactly what's searched:
+`core/retrieval.py` defines `RRFRetriever(collections)` - the single
+entry point for indexing into, and searching across, multiple collections
+at once, so callers don't loop over `collections` by hand:
 
 ```python
-from core.retrieval import build_pipeline
-from core.vectorstore import ChromaVectorStore
-from core.ingest import ingest_video
+from core.retrieval import RRFRetriever
 
-store = ChromaVectorStore("index_dir")
-indexer, retriever = build_pipeline(store)
-outputs = ingest_video("video.mp4", "out_dir", indexer=indexer)
-retriever.retrieve(outputs[0], topk=5)  # -> {"internvideo2": [...], "rd-curve": [...]}
+retriever = RRFRetriever(collections)
+retriever.index_scene(clip)  # records clip into every collection
+```
+`retrieve()` searches every collection and fuses their rankings via
+[Reciprocal Rank
+Fusion](https://en.wikipedia.org/wiki/Learning_to_rank#Reciprocal_rank_fusion) -
+`score(clip) = sum(1 / (RRF_K + rank + 1))` over every collection the clip
+appears in - so a clip that's a strong match in either an `"internvideo2"`
+or `"rd-curve"` search (or both) ranks highly, without needing to normalize
+similarity scores across the two (incompatible) vector spaces:
+
+```python
+retriever.retrieve(
+    "scene.mp4", topk=5
+)  # -> [(clip_path, fused_score), ...] sorted descending
+```
+
+### RD-curve recall
+
+`recall/rd_recall.py` defines `RDRecallTest(retriever, loader)`: does
+content-similarity retrieval also surface RD-curve-similar scenes?
+`run(index_csv, query_csv)` parses two CSVs of video URLs (one per row,
+first column): the index set is downloaded, split into scenes, and indexed
+into `retriever` (a private `_index_videos()` step); the query set is
+downloaded and split but never indexed, so a query's neighbors are always
+scenes from a *different* video, never its own - keeping index and query
+disjoint. For each query scene clip, `score()` retrieves its topk
+content-similarity neighbors (via `retriever.retrieve`, self excluded) and
+compares each neighbor's rate-distortion curve directly against the
+query's (`compute_rd_curve` - see "Rate-distortion curve" above - no
+index/search on the RD side at all), scoring by 1 minus their mean
+absolute VMAF difference. `run()` also writes an HTML report (thumbnails +
+RD-curve comparison per query/neighbor pair - see `recall/report.py`) to
+`report_path` (default `.cache/recall/report.html`). Build `retriever`
+from content collections only (e.g. just `"internvideo2"`, not
+`"rd-curve"`), or RD-curve similarity would leak into neighbor selection:
+
+```python
+from core.loader import YtDlpLoader
+from recall.rd_recall import RDRecallTest
+
+test = RDRecallTest(retriever, YtDlpLoader())
+test.score("scene.mp4", topk=5)  # -> mean RD-curve similarity to its topk content neighbors, for an already-indexed clip
+test.run("index_videos.csv", "query_videos.csv", topk=5)  # -> parses both CSVs, indexes the first, scores the second, mean over every query scene
 ```
 
 ## Cleanup
@@ -205,6 +256,7 @@ python tests/test_vectorstore.py
 python tests/test_rd_curve.py
 python tests/test_embed.py
 python tests/test_retrieval.py
+python tests/test_recall.py
 ```
 
 ## Quality gate

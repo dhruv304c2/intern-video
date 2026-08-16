@@ -8,7 +8,7 @@ THUMBNAIL_FRACTIONS = [0.25, 0.5, 0.75]
 
 
 class SceneClip(NamedTuple):
-    """One encoded scene clip, with enough metadata for an Indexer to record it."""
+    """One encoded scene clip, with enough metadata for a Collection to record it."""
 
     path: str
     source_video: str

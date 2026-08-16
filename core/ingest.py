@@ -6,7 +6,7 @@ from scenedetect import ContentDetector, detect
 
 from core.embedder.internvideo2 import _ORIG_CWD
 from core.encode import encode_video
-from core.indexing import Indexer, SceneClip
+from core.indexing import SceneClip
 
 
 def split_scenes(
@@ -60,22 +60,3 @@ def split_scenes(
             )
         )
     return clips
-
-
-def ingest_video(
-    video_path: str,
-    out_dir: str,
-    kbps: int = 2500,
-    indexer: Indexer | None = None,
-) -> list[str]:
-    """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
-
-    If `indexer` is given, also indexes each scene clip through it (see
-    core/indexing/index.py::Indexer) - one embedding + store write per
-    ann, per scene.
-    """
-    clips = split_scenes(video_path, out_dir, kbps=kbps)
-    if indexer:
-        for clip in clips:
-            indexer.index_scene(clip)
-    return [clip.path for clip in clips]

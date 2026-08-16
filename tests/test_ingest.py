@@ -1,4 +1,4 @@
-"""Smallest check that ingest_video splits a hard cut into per-scene encoded clips."""
+"""Smallest check that split_scenes splits a hard cut into per-scene encoded clips."""
 
 import os
 import subprocess
@@ -6,7 +6,7 @@ import tempfile
 
 import _path  # noqa: F401
 
-from core.ingest import ingest_video
+from core.ingest import split_scenes
 
 
 def test_ingest_splits_scenes() -> None:
@@ -33,7 +33,8 @@ def test_ingest_splits_scenes() -> None:
         )
 
         out_dir = os.path.join(tmp, "scenes")
-        outputs = ingest_video(src, out_dir, kbps=500)
+        clips = split_scenes(src, out_dir, kbps=500)
+        outputs = [clip.path for clip in clips]
 
         assert len(outputs) >= 1
         for clip in outputs:
