@@ -1,6 +1,5 @@
 """Smallest checks for RDRecallTest: self-exclusion, dataset indexing, and a bounded score."""
 
-import csv
 import os
 import subprocess
 import tempfile
@@ -111,16 +110,11 @@ def test_run_indexes_dataset_and_score_is_bounded() -> None:
         assert 0.0 <= score <= 1.0
         print(f"OK: score={score:.4f}")
 
-        index_csv = os.path.join(tmp, "index.csv")
-        query_csv = os.path.join(tmp, "query.csv")
-        with open(index_csv, "w", newline="") as f:
-            csv.writer(f).writerow([index_src])
-        with open(query_csv, "w", newline="") as f:
-            csv.writer(f).writerow([query_src])
-
         report_path = os.path.join(tmp, "report.html")
         run_score = test.run(
-            index_csv, query_csv, report_path=report_path
+            [index_src],
+            [query_src],
+            report_path=report_path,
         )
         assert 0.0 <= run_score <= 1.0
         assert os.path.exists(report_path)

@@ -39,16 +39,20 @@ encode_video("video.mp4", "output.mp4", kbps=2500)
 ### Scene-split ingestion
 
 `core/ingest.py` is a pure library (`split_scenes`) - `main.py` is the CLI
-entry point: it builds an `RRFRetriever` (see "Multi-collection retrieval"
-below) over an `"internvideo2"` collection against
-`ChromaVectorStore(".cache/index")`, then runs `RDRecallTest` (see
-"RD-curve recall" below) over an index/query CSV pair of YouTube URLs and
-prints the mean score - `RDRecallTest` parses both CSVs, then downloads,
-splits, and indexes the index-set URLs, and downloads, splits (but doesn't
-index) the query-set URLs:
+entry point (arg parsing lives in `cli/`, see "CLI structure" below): it
+builds an `RRFRetriever` (see "Multi-collection retrieval" below) over an
+`"internvideo2"` collection against `ChromaVectorStore(".cache/index")`,
+then runs `RDRecallTest` (see "RD-curve recall" below) over an index/query
+video set and prints the mean score - it resolves the index/query lists
+(CSV of YouTube URLs for `yt`, a directory of video files for `local`),
+then downloads/splits/indexes the index set and downloads/splits (but
+doesn't index) the query set:
 ```
-python main.py <index_videos.csv> <query_videos.csv> --max-scenes 50
+python main.py recall yt <index_videos.csv> <query_videos.csv> --max-scenes 50
+python main.py recall local <index_dir> <query_dir> --max-scenes 50
 ```
+`local` mode picks up every `.mp4`/`.mkv`/`.mov`/`.avi`/`.webm` file
+directly inside each directory (see `VIDEO_EXTENSIONS` in `cli/recall.py`).
 `--max-scenes` (default 50) caps how many scenes each video is split into -
 see `split_scenes` below. Or, against the sample sets in `datasets/`:
 ```
@@ -61,6 +65,12 @@ ffmpeg pass (cut + bitrate encode together, no intermediate re-encode), then
 extracts a few thumbnail frames per scene (`<clip>-thumb-N.jpg`, alongside
 the clip) and embeds it with `InternVideo2Embedder` (needs the checkpoint
 from "One-time setup" above) for lookups against past scenes.
+
+`main.py` just builds the parser (`cli.build_arg_parser()`) and dispatches
+to `args.run(args)` - one subcommand module per command, so `main.py` stays
+small. `cli/parser.py` builds the top-level parser; `cli/recall.py` owns
+the `recall {yt,local}` subcommand tree (arg definitions + the `_run_yt`/
+`_run_local` handlers that build the loader and call `RDRecallTest.run`).
 
 As a library (indexing is optional - skip the `retriever.index_scene` loop to
 just split scenes):
@@ -219,11 +229,14 @@ retriever.retrieve(
 
 `recall/rd_recall.py` defines `RDRecallTest(retriever, loader)`: does
 content-similarity retrieval also surface RD-curve-similar scenes?
-`run(index_csv, query_csv)` parses two CSVs of video URLs (one per row,
-first column): the index set is downloaded, split into scenes, and indexed
-into `retriever` (a private `_index_videos()` step - each URL is recorded
-in `cache_path` (default `.cache/recall/indexed_urls.json`) once indexed,
-so a later `run()` skips re-downloading/re-splitting/re-indexing it; pass
+`run(index_videos, query_videos)` takes two lists of entries - whatever
+`loader.load()` accepts (a YouTube URL for `YtDlpLoader`, a local file path
+for `LocalVideoLoader`); resolving a CSV or directory into that list is the
+caller's job (see `cli/recall.py`), not `RDRecallTest`'s. The index set is
+downloaded, split into scenes, and indexed into `retriever` (a private
+`_index_videos()` step - each entry is recorded in `cache_path` (default
+`.cache/recall/indexed_urls.json`) once indexed, so a later `run()` skips
+re-downloading/re-splitting/re-indexing it; pass
 `bypass_cache=True` - or `./run-recall.sh --bypass-cache` - to force a
 full re-index); the query set is
 downloaded and split but never indexed, so a query's neighbors are always
@@ -250,7 +263,7 @@ from recall.rd_recall import RDRecallTest
 
 test = RDRecallTest(retriever, YtDlpLoader())
 test.score("scene.mp4", topk=5)  # -> mean RD-curve similarity to its topk content neighbors, for an already-indexed clip
-test.run("index_videos.csv", "query_videos.csv", topk=5)  # -> parses both CSVs, indexes the first, scores the second, mean over every query scene
+test.run(["index1.mp4", "index2.mp4"], ["query.mp4"], topk=5)  # -> indexes the first list, scores the second, mean over every query scene
 ```
 
 ## Cleanup

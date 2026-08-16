@@ -1,6 +1,5 @@
 """RDRecallTest: does content-similarity retrieval also surface RD-curve-similar scenes?"""
 
-import csv
 import json
 import os
 from collections.abc import Iterator
@@ -35,7 +34,7 @@ class RDRecallTest:
         cache_path: str = ".cache/recall/indexed_urls.json",
         max_scenes: int = 50,
     ) -> None:
-        """`retriever` supplies content-similarity neighbors (build it from content collections only - e.g. `RRFRetriever([internvideo2_collection])` - not the rd-curve collection, or RD-curve similarity would leak into neighbor selection); RD-curve similarity between a query and each neighbor is computed directly (no index/search on the RD side). `loader` downloads each dataset URL (parsed from the CSVs passed to `run()`) before it's split into scenes. `cache_path` records which index-set URLs have already been indexed, so a later `run()` skips re-downloading/re-splitting/re-indexing them - see `_index_videos`. `max_scenes` caps how many scenes each video is split into (see `core.ingest.split_scenes`)."""
+        """`retriever` supplies content-similarity neighbors (build it from content collections only - e.g. `RRFRetriever([internvideo2_collection])` - not the rd-curve collection, or RD-curve similarity would leak into neighbor selection); RD-curve similarity between a query and each neighbor is computed directly (no index/search on the RD side). `loader` resolves each dataset entry passed to `run()` (a URL, local path, or whatever else it understands) into a local video file before it's split into scenes. `cache_path` records which index-set entries have already been indexed, so a later `run()` skips re-downloading/re-splitting/re-indexing them - see `_index_videos`. `max_scenes` caps how many scenes each video is split into (see `core.ingest.split_scenes`)."""
         self.retriever = retriever
         self.loader = loader
         self.max_scenes = max_scenes
@@ -57,22 +56,19 @@ class RDRecallTest:
 
     def run(
         self,
-        index_csv: str,
-        query_csv: str,
+        index_videos: list[str],
+        query_videos: list[str],
         topk: int = 5,
         report_path: str = ".cache/recall/report.html",
         bypass_cache: bool = False,
     ) -> float:
-        """Parse `index_csv` and `query_csv` (each one video URL per row, first column), download+index every `index_csv` video into `self.retriever`, then download+split (but don't index) every `query_csv` video, score each of its scene clips against the index, write an HTML report (thumbnails + RD-curve comparison) to `report_path`, and return the mean score. Keeping index and query videos disjoint means a query's neighbors are never scenes from its own source video. `index_csv` URLs already recorded in `self.cache_path` (from a prior `run()`) are skipped - pass `bypass_cache=True` to force re-downloading/re-splitting/re-indexing all of them."""
+        """Download+index every `index_videos` entry (a URL or local path - whatever `self.loader` accepts) into `self.retriever`, then download+split (but don't index) every `query_videos` entry, score each of its scene clips against the index, write an HTML report (thumbnails + RD-curve comparison) to `report_path`, and return the mean score. Keeping index and query videos disjoint means a query's neighbors are never scenes from its own source video. `index_videos` entries already recorded in `self.cache_path` (from a prior `run()`) are skipped - pass `bypass_cache=True` to force re-downloading/re-splitting/re-indexing all of them."""
         self._index_videos(
-            _parse_dataset(index_csv),
-            bypass_cache=bypass_cache,
+            index_videos, bypass_cache=bypass_cache
         )
         clip_paths = [
             clip.path
-            for clip in self._load_scenes(
-                _parse_dataset(query_csv)
-            )
+            for clip in self._load_scenes(query_videos)
         ]
         results = []
         pbar = tqdm(
@@ -128,24 +124,24 @@ class RDRecallTest:
         )
 
     def _index_videos(
-        self, urls: list[str], bypass_cache: bool = False
+        self, videos: list[str], bypass_cache: bool = False
     ) -> None:
-        """Download+split+index every URL not already recorded in `self.cache_path` (skipped otherwise, unless `bypass_cache`); each URL is marked as indexed - persisted immediately - once all its scenes are recorded, so an interrupted run only redoes the videos it didn't finish."""
+        """Download+split+index every entry not already recorded in `self.cache_path` (skipped otherwise, unless `bypass_cache`); each entry is marked as indexed - persisted immediately - once all its scenes are recorded, so an interrupted run only redoes the videos it didn't finish."""
         indexed = (
             set()
             if bypass_cache
-            else self._load_indexed_urls()
+            else self._load_indexed_videos()
         )
-        todo = [u for u in urls if u not in indexed]
-        skipped = len(urls) - len(todo)
+        todo = [v for v in videos if v not in indexed]
+        skipped = len(videos) - len(todo)
         if skipped:
             tqdm.write(
                 f"[indexing] skipping {skipped} already-indexed video(s)"
             )
-        for url in tqdm(
+        for video in tqdm(
             todo, desc="Indexing videos", unit="video"
         ):
-            scenes = list(self._load_scenes([url]))
+            scenes = list(self._load_scenes([video]))
             for clip in tqdm(
                 scenes,
                 desc="Indexing scenes",
@@ -158,35 +154,37 @@ class RDRecallTest:
                 # encoded clip right away so re-indexing many videos
                 # doesn't fill up disk.
                 os.remove(clip.path)
-            indexed.add(url)
-            self._save_indexed_urls(indexed)
+            indexed.add(video)
+            self._save_indexed_videos(indexed)
 
-    def _load_indexed_urls(self) -> set[str]:
-        """URLs previously recorded as indexed in `self.cache_path` - empty if the cache file doesn't exist yet."""
+    def _load_indexed_videos(self) -> set[str]:
+        """Entries previously recorded as indexed in `self.cache_path` - empty if the cache file doesn't exist yet."""
         if not os.path.exists(self.cache_path):
             return set()
         with open(self.cache_path) as f:
             return set(json.load(f))
 
-    def _save_indexed_urls(self, urls: set[str]) -> None:
-        """Persist `urls` as the indexed set to `self.cache_path`."""
+    def _save_indexed_videos(
+        self, videos: set[str]
+    ) -> None:
+        """Persist `videos` as the indexed set to `self.cache_path`."""
         os.makedirs(
             os.path.dirname(self.cache_path), exist_ok=True
         )
         with open(self.cache_path, "w") as f:
-            json.dump(sorted(urls), f)
+            json.dump(sorted(videos), f)
 
     def _load_scenes(
-        self, urls: list[str]
+        self, videos: list[str]
     ) -> Iterator[SceneClip]:
-        """Download each URL via `self.loader` and split it into scenes, without indexing them."""
+        """Resolve each entry to a local file via `self.loader` and split it into scenes, without indexing them."""
         pbar = tqdm(
-            urls, desc="Downloading videos", unit="video"
+            videos, desc="Downloading videos", unit="video"
         )
-        for url in pbar:
-            pbar.set_postfix_str(url)
+        for video in pbar:
+            pbar.set_postfix_str(video)
             video_path = self.loader.load(
-                url, self.video_dir
+                video, self.video_dir
             )
             scenes = split_scenes(
                 video_path,
@@ -194,13 +192,6 @@ class RDRecallTest:
                 max_scenes=self.max_scenes,
             )
             yield from scenes
-
-
-def _parse_dataset(csv_path: str) -> list[str]:
-    """Read `csv_path` (resolved against the original cwd - see `RDRecallTest.__init__`) and return every row's first column as a video URL."""
-    csv_path = os.path.join(_ORIG_CWD, csv_path)
-    with open(csv_path, newline="") as f:
-        return [row[0] for row in csv.reader(f) if row]
 
 
 def _other_clips(

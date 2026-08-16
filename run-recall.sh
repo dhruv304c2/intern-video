@@ -5,5 +5,5 @@ cd "$(dirname "$0")"
 
 MAX_SCENES="${MAX_SCENES:-50}"
 
-.venv/bin/python main.py datasets/index_videos.csv datasets/query_videos.csv \
+.venv/bin/python main.py recall yt datasets/index_videos.csv datasets/query_videos.csv \
     --max-scenes "$MAX_SCENES" "$@"
