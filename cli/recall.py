@@ -112,7 +112,7 @@ def _run_recall(
 
 
 def _build_retriever() -> RRFRetriever:
-    store = ChromaVectorStore(".cache/index")
+    store = ChromaVectorStore(_resolve(".cache/index"))
     return RRFRetriever(
         [
             Collection.symmetric(
