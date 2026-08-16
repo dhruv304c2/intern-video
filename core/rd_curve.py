@@ -12,7 +12,7 @@ from pathlib import Path
 
 from core.encode import encode_video
 
-DEFAULT_KBPS_RUNGS = [500, 1000, 2000, 4000, 8000]
+DEFAULT_KBPS_RUNGS = list(range(1000, 9001, 500))
 
 
 def _vmaf(reference: str, encoded: str) -> float:
