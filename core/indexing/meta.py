@@ -4,6 +4,8 @@ import os
 import subprocess
 from typing import NamedTuple
 
+from core.rd_curve import compute_rd_curve
+
 THUMBNAIL_FRACTIONS = [0.25, 0.5, 0.75]
 
 
@@ -66,7 +68,12 @@ def extract_thumbnails(clip_path: str) -> list[str]:
 
 
 def build_scene_meta(clip: SceneClip) -> dict:
-    """Extract `clip`'s thumbnails and assemble the metadata dict stored alongside its vectors."""
+    """Extract `clip`'s thumbnails and RD curve, and assemble the metadata dict stored alongside its vectors.
+
+    The RD curve is precomputed here (rather than recomputed later from the
+    clip file) so callers can delete the raw clip right after indexing and
+    still compare its RD curve against other scenes' later.
+    """
     return {
         "clip": clip.path,
         "source_video": clip.source_video,
@@ -74,4 +81,7 @@ def build_scene_meta(clip: SceneClip) -> dict:
         "start": clip.start,
         "end": clip.end,
         "thumbnails": extract_thumbnails(clip.path),
+        "rd_curve": [
+            vmaf for _, vmaf in compute_rd_curve(clip.path)
+        ],
     }

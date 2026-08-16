@@ -7,6 +7,7 @@ from core.indexing import (
     SceneClip,
     build_scene_meta,
 )
+from core.vectorstore.protocol import Metadata
 
 RRF_K = 60
 
@@ -22,9 +23,10 @@ class RRFRetriever(NamedTuple):
 
     def retrieve(
         self, clip_path: str, topk: int = 5
-    ) -> list[tuple[str, float]]:
-        """Search every collection for `clip_path`'s neighbors and fuse their rankings via RRF: score(clip) = sum(1 / (RRF_K + rank + 1)) over every collection it appears in. Returns the topk clips by fused score, descending."""
+    ) -> list[tuple[str, Metadata, float]]:
+        """Search every collection for `clip_path`'s neighbors and fuse their rankings via RRF: score(clip) = sum(1 / (RRF_K + rank + 1)) over every collection it appears in. Returns the topk (clip, metadata, fused_score) by fused score, descending."""
         scores: dict[str, float] = {}
+        meta_by_clip: dict[str, Metadata] = {}
         for collection in self.collections:
             matches = collection.search(
                 clip_path, topk=topk
@@ -34,8 +36,13 @@ class RRFRetriever(NamedTuple):
                 scores[clip] = scores.get(
                     clip, 0.0
                 ) + 1.0 / (RRF_K + rank + 1)
-        return sorted(
+                meta_by_clip[clip] = meta
+        ranked = sorted(
             scores.items(),
             key=lambda kv: kv[1],
             reverse=True,
         )[:topk]
+        return [
+            (clip, meta_by_clip[clip], score)
+            for clip, score in ranked
+        ]

@@ -4,13 +4,18 @@ import csv
 import json
 import os
 from collections.abc import Iterator
+from typing import cast
 
 from core.embedder.internvideo2 import _ORIG_CWD
-from core.indexing import SceneClip
+from core.indexing import SceneClip, extract_thumbnails
 from core.ingest import split_scenes
 from core.loader import VideoLoader
-from core.rd_curve import compute_rd_curve
+from core.rd_curve import (
+    DEFAULT_KBPS_RUNGS,
+    compute_rd_curve,
+)
 from core.retrieval import RRFRetriever
+from core.vectorstore.protocol import Metadata
 from recall.report import (
     NeighborResult,
     QueryResult,
@@ -68,7 +73,9 @@ class RDRecallTest:
         n = len(clip_paths)
         results = []
         for i, clip in enumerate(clip_paths, 1):
+            extract_thumbnails(clip)
             result = self._score_detail(clip, topk)
+            os.remove(clip)
             print(
                 f"[score {i}/{n}] {clip}: {result.score:.4f}",
                 flush=True,
@@ -88,14 +95,19 @@ class RDRecallTest:
     def _score_detail(
         self, clip_path: str, topk: int = 5
     ) -> QueryResult:
-        """Like `score()`, but also keeps the query/neighbor RD curves for report rendering."""
+        """Like `score()`, but also keeps the query/neighbor RD curves for report rendering.
+
+        Neighbors' RD curves come from their stored metadata (precomputed at
+        index time - see `build_scene_meta`), not by re-reading their clip
+        file, which may already have been deleted after indexing.
+        """
         neighbors = _other_clips(
             self.retriever, clip_path, topk
         )
         query_curve = compute_rd_curve(clip_path)
         neighbor_results = []
-        for neighbor in neighbors:
-            curve = compute_rd_curve(neighbor)
+        for neighbor, meta in neighbors:
+            curve = _rd_curve_from_meta(meta)
             similarity = _rd_curve_similarity(
                 query_curve, curve
             )
@@ -135,6 +147,11 @@ class RDRecallTest:
             n = len(scenes)
             for i, clip in enumerate(scenes, 1):
                 self.retriever.index_scene(clip)
+                # ponytail: thumbnails + RD curve are already captured in
+                # the clip's metadata (build_scene_meta) - drop the raw
+                # encoded clip right away so re-indexing many videos
+                # doesn't fill up disk.
+                os.remove(clip.path)
                 print(
                     f"[indexing {i}/{n}] {clip.path}",
                     flush=True,
@@ -189,12 +206,22 @@ def _parse_dataset(csv_path: str) -> list[str]:
 
 def _other_clips(
     retriever: RRFRetriever, clip_path: str, topk: int
-) -> list[str]:
-    """`clip_path`'s topk fused nearest neighbors via `retriever`, excluding itself."""
+) -> list[tuple[str, Metadata]]:
+    """`clip_path`'s topk fused nearest neighbors (with metadata) via `retriever`, excluding itself."""
     matches = retriever.retrieve(clip_path, topk=topk + 1)
     return [
-        clip for clip, _ in matches if clip != clip_path
+        (clip, meta)
+        for clip, meta, _ in matches
+        if clip != clip_path
     ][:topk]
+
+
+def _rd_curve_from_meta(
+    meta: Metadata,
+) -> list[tuple[int, float]]:
+    """Reconstruct a scene's RD curve from its stored metadata (see `build_scene_meta`)."""
+    vmafs = cast(list[float], meta["rd_curve"])
+    return list(zip(DEFAULT_KBPS_RUNGS, vmafs))
 
 
 def _rd_curve_similarity(

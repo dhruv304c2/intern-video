@@ -100,9 +100,12 @@ def test_run_indexes_dataset_and_score_is_bounded() -> None:
             retriever.index_scene(clip)
 
         query = index_scenes[0].path
-        assert query not in _other_clips(
-            retriever, query, topk=5
-        )
+        assert query not in [
+            clip
+            for clip, _ in _other_clips(
+                retriever, query, topk=5
+            )
+        ]
 
         score = test.score(query, topk=5)
         assert 0.0 <= score <= 1.0
@@ -122,6 +125,22 @@ def test_run_indexes_dataset_and_score_is_bounded() -> None:
         assert 0.0 <= run_score <= 1.0
         assert os.path.exists(report_path)
         print(f"OK: run score={run_score:.4f}")
+
+        query_scene = os.path.join(
+            tmp, "scenes", "query-Scene-001.mp4"
+        )
+        assert not os.path.exists(query_scene), (
+            "raw scene clip should be deleted after scoring"
+        )
+        thumb = os.path.join(
+            tmp, "scenes", "query-Scene-001-thumb-2.jpg"
+        )
+        assert os.path.exists(thumb), (
+            "thumbnail should survive clip deletion"
+        )
+        print(
+            "OK: query clip deleted after scoring, thumbnail kept"
+        )
 
 
 def test_index_videos_skips_cached_urls_unless_bypassed() -> (

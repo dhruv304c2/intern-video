@@ -209,7 +209,7 @@ similarity scores across the two (incompatible) vector spaces:
 ```python
 retriever.retrieve(
     "scene.mp4", topk=5
-)  # -> [(clip_path, fused_score), ...] sorted descending
+)  # -> [(clip_path, metadata, fused_score), ...] sorted descending
 ```
 
 ### RD-curve recall
@@ -227,14 +227,19 @@ downloaded and split but never indexed, so a query's neighbors are always
 scenes from a *different* video, never its own - keeping index and query
 disjoint. For each query scene clip, `score()` retrieves its topk
 content-similarity neighbors (via `retriever.retrieve`, self excluded) and
-compares each neighbor's rate-distortion curve directly against the
-query's (`compute_rd_curve` - see "Rate-distortion curve" above - no
-index/search on the RD side at all), scoring by 1 minus their mean
-absolute VMAF difference. `run()` also writes an HTML report (thumbnails +
-RD-curve comparison per query/neighbor pair - see `recall/report.py`) to
-`report_path` (default `.cache/recall/report.html`). Build `retriever`
-from content collections only (e.g. just `"internvideo2"`, not
-`"rd-curve"`), or RD-curve similarity would leak into neighbor selection:
+compares each neighbor's rate-distortion curve against the query's,
+scoring by 1 minus their mean absolute VMAF difference. A neighbor's curve
+comes from its stored metadata (`build_scene_meta` precomputes `rd_curve`
+at index time), not by re-encoding its clip file - which may already be
+gone, since every indexed clip's raw `.mp4` is deleted right after
+indexing (thumbnails and the RD curve are kept, everything the report and
+scoring need). A query clip is only deleted after it's scored, once its
+own thumbnails have been extracted. `run()` also writes an HTML report
+(thumbnails + RD-curve comparison per query/neighbor pair - see
+`recall/report.py`) to `report_path` (default
+`.cache/recall/report.html`). Build `retriever` from content collections
+only (e.g. just `"internvideo2"`, not `"rd-curve"`), or RD-curve
+similarity would leak into neighbor selection:
 
 ```python
 from core.loader import YtDlpLoader
