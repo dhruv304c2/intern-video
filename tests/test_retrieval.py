@@ -1,4 +1,4 @@
-"""Smallest check that find_similar returns an indexed scene as its own top match."""
+"""Smallest check that Retriever.retrieve returns an indexed scene as its own top match."""
 
 import os
 import subprocess
@@ -6,9 +6,9 @@ import tempfile
 
 import _path  # noqa: F401
 
+from core.ingest import ingest_video
 from core.retrieval import build_pipeline
 from core.vectorstore import ChromaVectorStore
-from ingest import ingest_video
 
 
 def test_find_similar_returns_self_as_top_match() -> None:
@@ -38,9 +38,9 @@ def test_find_similar_returns_self_as_top_match() -> None:
         store = ChromaVectorStore(
             os.path.join(tmp, "index")
         )
-        ingestor, retriever = build_pipeline(store)
+        indexer, retriever = build_pipeline(store)
         outputs = ingest_video(
-            src, scenes_dir, kbps=500, ingestor=ingestor
+            src, scenes_dir, kbps=500, indexer=indexer
         )
 
         results = retriever.retrieve(outputs[0], topk=5)

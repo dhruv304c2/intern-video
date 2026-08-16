@@ -9,7 +9,6 @@ opencv-python
 numpy<2
 huggingface_hub
 scipy
-fastapi
-uvicorn
+yt-dlp
 ruff
 basedpyright

@@ -6,6 +6,6 @@ if [ -f .venv/bin/activate ]; then
     source .venv/bin/activate
 fi
 
-ruff format --check core/ ingest.py tests/
-ruff check core/ ingest.py tests/
-basedpyright core/ ingest.py tests/
+ruff format --check core/ main.py tests/
+ruff check core/ main.py tests/
+basedpyright core/ main.py tests/

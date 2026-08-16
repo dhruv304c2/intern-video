@@ -1,20 +1,12 @@
 """Split a video into scenes (PySceneDetect) and encode each scene clip."""
 
-import argparse
 import os
 
 from scenedetect import ContentDetector, detect
 
+from core.embedder.internvideo2 import _ORIG_CWD
 from core.encode import encode_video
-from core.vectorstore import ChromaVectorStore
-
-# captured before the core.indexing import below, which transitively imports
-# core.embedder - changing the process's cwd as a side effect of loading
-# the vendored model config
-_ORIG_CWD = os.getcwd()
-
-from core.indexing import Ingestor, SceneClip
-from core.retrieval import build_pipeline
+from core.indexing import Indexer, SceneClip
 
 
 def split_scenes(
@@ -23,8 +15,10 @@ def split_scenes(
     kbps: int = 2500,
 ) -> list[SceneClip]:
     """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`."""
-    # core.indexing (imported above) has already changed the process's
-    # cwd by this point - resolve against the original cwd, not the current one.
+    # core.embedder.internvideo2 (imported above) changes the process's cwd
+    # as a side effect of loading the vendored model config - resolve
+    # user-supplied paths against the original cwd it captured, not the
+    # current one.
     video_path = os.path.abspath(
         os.path.join(_ORIG_CWD, video_path)
     )
@@ -72,57 +66,16 @@ def ingest_video(
     video_path: str,
     out_dir: str,
     kbps: int = 2500,
-    ingestor: Ingestor | None = None,
+    indexer: Indexer | None = None,
 ) -> list[str]:
     """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
 
-    If `ingestor` is given, also indexes each scene clip through it (see
-    core/indexing/index.py::Ingestor) - one embedding + store write per
+    If `indexer` is given, also indexes each scene clip through it (see
+    core/indexing/index.py::Indexer) - one embedding + store write per
     ann, per scene.
     """
     clips = split_scenes(video_path, out_dir, kbps=kbps)
-    if ingestor:
+    if indexer:
         for clip in clips:
-            ingestor.ingest(clip)
+            indexer.index_scene(clip)
     return [clip.path for clip in clips]
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "video", help="path to a source video file"
-    )
-    parser.add_argument(
-        "out_dir",
-        help="directory to write encoded scene clips into",
-    )
-    parser.add_argument(
-        "--kbps",
-        type=int,
-        default=2500,
-        help="target video bitrate in kbps",
-    )
-    parser.add_argument(
-        "--index",
-        help="vector store root to also record each scene's rate-distortion curve and InternVideo2 embedding into",
-    )
-    args = parser.parse_args()
-
-    ingestor = None
-    if args.index:
-        ingestor, _ = build_pipeline(
-            ChromaVectorStore(args.index)
-        )
-    outputs = ingest_video(
-        args.video,
-        args.out_dir,
-        kbps=args.kbps,
-        ingestor=ingestor,
-    )
-    print(
-        f"wrote {len(outputs)} scene clips to {args.out_dir}"
-    )
-
-
-if __name__ == "__main__":
-    main()

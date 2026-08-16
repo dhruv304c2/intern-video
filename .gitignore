@@ -5,12 +5,12 @@ __pycache__/
 
 .DS_Store
 
-# run.sh inputs/outputs
+# run.sh inputs
 vids/*
 !vids/.gitkeep
-scenes/
-index/
-.pids/
+
+# run.sh intermediate/output - scenes, chroma index, daemon pid/log files
+.cache/
 
 # InternVideo2 checkpoint (~2.6GB) - see README "One-time setup"
 weights/

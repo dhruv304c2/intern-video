@@ -6,7 +6,7 @@ import tempfile
 
 import _path  # noqa: F401
 
-from ingest import ingest_video
+from core.ingest import ingest_video
 
 
 def test_ingest_splits_scenes() -> None:
