@@ -10,8 +10,19 @@ namespace/collection.
 
 from typing import Protocol
 
-import chromadb
 import numpy.typing as npt
+
+# backend-agnostic value union - deliberately narrower than any one
+# backend's own metadata type (e.g. chromadb.Metadata), so swapping the
+# VectorStore implementation can't leak a backend-specific type here.
+MetadataValue = (
+    str
+    | int
+    | float
+    | bool
+    | list[str | int | float | bool]
+)
+Metadata = dict[str, MetadataValue]
 
 
 class VectorStore(Protocol):
@@ -19,7 +30,7 @@ class VectorStore(Protocol):
         self,
         namespace: str,
         vector: npt.ArrayLike,
-        metadata: chromadb.Metadata,
+        metadata: Metadata,
     ) -> None:
         """Append one embedding + its metadata to `namespace`'s index."""
         ...
@@ -29,12 +40,12 @@ class VectorStore(Protocol):
         namespace: str,
         query: npt.ArrayLike,
         topk: int = 5,
-    ) -> list[tuple[chromadb.Metadata, float]]:
+    ) -> list[tuple[Metadata, float]]:
         """Return up to `topk` (metadata, cosine_similarity) pairs for `namespace`, best match first."""
         ...
 
     def list_all(
         self, namespace: str
-    ) -> list[tuple[chromadb.Metadata, list[float]]]:
+    ) -> list[tuple[Metadata, list[float]]]:
         """Return every (metadata, vector) pair stored in `namespace`, in no particular order."""
         ...

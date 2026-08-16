@@ -21,7 +21,7 @@ from core.vectorstore import ChromaVectorStore, VectorStore
 
 
 class SceneMeta(TypedDict):
-    """The real shape ingest.py writes - chromadb.Metadata only
+    """The real shape ingest.py writes - core.vectorstore.Metadata only
     knows the generic value union it's willing to store."""
 
     clip: str

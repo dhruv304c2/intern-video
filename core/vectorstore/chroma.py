@@ -1,12 +1,15 @@
 """Chroma-backed VectorStore (see protocol.py) - one Chroma collection per namespace."""
 
 import uuid
+from typing import cast
 from urllib.parse import urlparse
 
 import chromadb
 import numpy as np
 import numpy.typing as npt
 from chromadb.api import ClientAPI
+
+from core.vectorstore.protocol import Metadata
 
 
 class ChromaVectorStore:
@@ -42,7 +45,7 @@ class ChromaVectorStore:
         self,
         namespace: str,
         vector: npt.ArrayLike,
-        metadata: chromadb.Metadata,
+        metadata: Metadata,
     ) -> None:
         vector = np.asarray(
             vector, dtype=np.float32
@@ -58,7 +61,7 @@ class ChromaVectorStore:
         namespace: str,
         query: npt.ArrayLike,
         topk: int = 5,
-    ) -> list[tuple[chromadb.Metadata, float]]:
+    ) -> list[tuple[Metadata, float]]:
         query = np.asarray(query, dtype=np.float32).reshape(
             -1
         )
@@ -76,7 +79,7 @@ class ChromaVectorStore:
         assert metadatas is not None
         assert distances is not None
         return [
-            (meta, 1 - dist)
+            (cast(Metadata, meta), 1 - dist)
             for meta, dist in zip(
                 metadatas[0], distances[0]
             )
@@ -84,7 +87,7 @@ class ChromaVectorStore:
 
     def list_all(
         self, namespace: str
-    ) -> list[tuple[chromadb.Metadata, list[float]]]:
+    ) -> list[tuple[Metadata, list[float]]]:
         collection = self._collection(namespace)
         if collection.count() == 0:
             return []
@@ -98,6 +101,9 @@ class ChromaVectorStore:
         assert metadatas is not None
         assert embeddings is not None
         return [
-            (meta, [float(v) for v in vector])
+            (
+                cast(Metadata, meta),
+                [float(v) for v in vector],
+            )
             for meta, vector in zip(metadatas, embeddings)
         ]
