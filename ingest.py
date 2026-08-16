@@ -13,11 +13,8 @@ from core.vectorstore import ChromaVectorStore
 # the vendored model config
 _ORIG_CWD = os.getcwd()
 
-from core.embedder import (
-    InternVideo2Embedder,
-    RdCurveEmbedder,
-)
-from core.indexing import Ann, SceneClip, index_scene
+from core.indexing import Ingestor, SceneClip
+from core.retrieval import build_pipeline
 
 
 def split_scenes(
@@ -75,18 +72,18 @@ def ingest_video(
     video_path: str,
     out_dir: str,
     kbps: int = 2500,
-    anns: list[Ann] | None = None,
+    ingestor: Ingestor | None = None,
 ) -> list[str]:
     """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`.
 
-    If `anns` is given, also indexes each scene into every ann in it (see
-    core/indexing/index.py::index_scene) - one embedding + store write per
+    If `ingestor` is given, also indexes each scene clip through it (see
+    core/indexing/index.py::Ingestor) - one embedding + store write per
     ann, per scene.
     """
     clips = split_scenes(video_path, out_dir, kbps=kbps)
-    if anns:
+    if ingestor:
         for clip in clips:
-            index_scene(clip, anns)
+            ingestor.ingest(clip)
     return [clip.path for clip in clips]
 
 
@@ -111,19 +108,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    anns = None
+    ingestor = None
     if args.index:
-        store = ChromaVectorStore(args.index)
-        anns = [
-            Ann(
-                "internvideo2",
-                InternVideo2Embedder(),
-                store,
-            ),
-            Ann("rd-curve", RdCurveEmbedder(), store),
-        ]
+        ingestor, _ = build_pipeline(
+            ChromaVectorStore(args.index)
+        )
     outputs = ingest_video(
-        args.video, args.out_dir, kbps=args.kbps, anns=anns
+        args.video,
+        args.out_dir,
+        kbps=args.kbps,
+        ingestor=ingestor,
     )
     print(
         f"wrote {len(outputs)} scene clips to {args.out_dir}"

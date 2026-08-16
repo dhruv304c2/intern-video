@@ -5,6 +5,8 @@ caller with a `SceneClip` (from ingest.py's split_scenes, or elsewhere) can
 reuse `index_scene` against its own anns.
 """
 
+from typing import NamedTuple
+
 from core.indexing.ann import Ann
 from core.indexing.meta import SceneClip, build_scene_meta
 
@@ -22,3 +24,11 @@ def index_scene(clip: SceneClip, anns: list[Ann]) -> None:
             flush=True,
         )
         ann.record(clip.path, scene_meta)
+
+
+class Ingestor(NamedTuple):
+    anns: list[Ann]
+
+    def ingest(self, clip: SceneClip) -> None:
+        """Index `clip` into every ann this ingestor was built with."""
+        index_scene(clip, self.anns)

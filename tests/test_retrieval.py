@@ -6,12 +6,7 @@ import tempfile
 
 import _path  # noqa: F401
 
-from core.embedder import (
-    InternVideo2Embedder,
-    RdCurveEmbedder,
-)
-from core.indexing import Ann
-from core.retrieval import find_similar
+from core.retrieval import build_pipeline
 from core.vectorstore import ChromaVectorStore
 from ingest import ingest_video
 
@@ -43,19 +38,12 @@ def test_find_similar_returns_self_as_top_match() -> None:
         store = ChromaVectorStore(
             os.path.join(tmp, "index")
         )
-        anns = [
-            Ann(
-                "internvideo2",
-                InternVideo2Embedder(),
-                store,
-            ),
-            Ann("rd-curve", RdCurveEmbedder(), store),
-        ]
+        ingestor, retriever = build_pipeline(store)
         outputs = ingest_video(
-            src, scenes_dir, kbps=500, anns=anns
+            src, scenes_dir, kbps=500, ingestor=ingestor
         )
 
-        results = find_similar(outputs[0], anns, topk=5)
+        results = retriever.retrieve(outputs[0], topk=5)
 
         assert set(results) == {"internvideo2", "rd-curve"}
         for matches in results.values():

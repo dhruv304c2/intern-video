@@ -2,7 +2,11 @@
 
 from typing import NamedTuple
 
-from core.embedder import Embedder
+from core.embedder import (
+    Embedder,
+    InternVideo2Embedder,
+    RdCurveEmbedder,
+)
 from core.vectorstore import Metadata, VectorStore
 
 
@@ -30,3 +34,11 @@ class Ann(NamedTuple):
             self.embedder.embed(clip_path),
             topk=topk,
         )
+
+
+def default_anns(store: VectorStore) -> list[Ann]:
+    """The canonical anns every scene is indexed/searched against - one store, two namespaces."""
+    return [
+        Ann("internvideo2", InternVideo2Embedder(), store),
+        Ann("rd-curve", RdCurveEmbedder(), store),
+    ]
