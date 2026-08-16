@@ -25,6 +25,18 @@ class _LocalLoader:
         return url
 
 
+class _CountingLoader:
+    """Wraps another VideoLoader and counts `load()` calls, to check the indexing cache actually skips them."""
+
+    def __init__(self, inner: _LocalLoader) -> None:
+        self.inner = inner
+        self.calls = 0
+
+    def load(self, url: str, out_dir: str) -> str:
+        self.calls += 1
+        return self.inner.load(url, out_dir)
+
+
 def test_rd_curve_similarity_pure() -> None:
     curve = [(500, 80.0), (1000, 90.0), (2000, 95.0)]
     assert _rd_curve_similarity(curve, curve) > 0.999
@@ -79,6 +91,7 @@ def test_run_indexes_dataset_and_score_is_bounded() -> None:
             _LocalLoader(),
             video_dir=tmp,
             scenes_dir=os.path.join(tmp, "scenes"),
+            cache_path=os.path.join(tmp, "indexed.json"),
         )
 
         index_scenes = list(test._load_scenes([index_src]))
@@ -111,6 +124,49 @@ def test_run_indexes_dataset_and_score_is_bounded() -> None:
         print(f"OK: run score={run_score:.4f}")
 
 
+def test_index_videos_skips_cached_urls_unless_bypassed() -> (
+    None
+):
+    with tempfile.TemporaryDirectory() as tmp:
+        index_src = os.path.join(tmp, "index.mp4")
+        _make_video(index_src)
+
+        store = ChromaVectorStore(
+            os.path.join(tmp, "index")
+        )
+        collection = Collection.symmetric(
+            namespace="internvideo2",
+            embedder=InternVideo2Embedder(),
+            store=store,
+        )
+        retriever = RRFRetriever([collection])
+        loader = _CountingLoader(_LocalLoader())
+        test = RDRecallTest(
+            retriever,
+            loader,
+            video_dir=tmp,
+            scenes_dir=os.path.join(tmp, "scenes"),
+            cache_path=os.path.join(tmp, "indexed.json"),
+        )
+
+        test._index_videos([index_src])
+        assert loader.calls == 1
+
+        test._index_videos([index_src])
+        assert loader.calls == 1, (
+            "cached URL should be skipped, not re-downloaded"
+        )
+
+        test._index_videos([index_src], bypass_cache=True)
+        assert loader.calls == 2, (
+            "bypass_cache should force a re-download"
+        )
+        print(
+            "OK: indexing cache skips already-indexed URLs unless bypassed"
+        )
+
+
 if __name__ == "__main__":
     test_rd_curve_similarity_pure()
     test_run_indexes_dataset_and_score_is_bounded()
+    test_index_videos_skips_cached_urls_unless_bypassed()

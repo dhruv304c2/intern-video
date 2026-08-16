@@ -1,6 +1,7 @@
 """RDRecallTest: does content-similarity retrieval also surface RD-curve-similar scenes?"""
 
 import csv
+import json
 import os
 from collections.abc import Iterator
 
@@ -24,8 +25,9 @@ class RDRecallTest:
         loader: VideoLoader,
         video_dir: str = ".cache/recall/videos",
         scenes_dir: str = ".cache/recall/scenes",
+        cache_path: str = ".cache/recall/indexed_urls.json",
     ) -> None:
-        """`retriever` supplies content-similarity neighbors (build it from content collections only - e.g. `RRFRetriever([internvideo2_collection])` - not the rd-curve collection, or RD-curve similarity would leak into neighbor selection); RD-curve similarity between a query and each neighbor is computed directly (no index/search on the RD side). `loader` downloads each dataset URL (parsed from the CSVs passed to `run()`) before it's split into scenes."""
+        """`retriever` supplies content-similarity neighbors (build it from content collections only - e.g. `RRFRetriever([internvideo2_collection])` - not the rd-curve collection, or RD-curve similarity would leak into neighbor selection); RD-curve similarity between a query and each neighbor is computed directly (no index/search on the RD side). `loader` downloads each dataset URL (parsed from the CSVs passed to `run()`) before it's split into scenes. `cache_path` records which index-set URLs have already been indexed, so a later `run()` skips re-downloading/re-splitting/re-indexing them - see `_index_videos`."""
         self.retriever = retriever
         self.loader = loader
         # core.embedder.internvideo2 (imported transitively above) changes
@@ -35,6 +37,9 @@ class RDRecallTest:
         self.video_dir = os.path.join(_ORIG_CWD, video_dir)
         self.scenes_dir = os.path.join(
             _ORIG_CWD, scenes_dir
+        )
+        self.cache_path = os.path.join(
+            _ORIG_CWD, cache_path
         )
 
     def score(self, clip_path: str, topk: int = 5) -> float:
@@ -47,9 +52,13 @@ class RDRecallTest:
         query_csv: str,
         topk: int = 5,
         report_path: str = ".cache/recall/report.html",
+        bypass_cache: bool = False,
     ) -> float:
-        """Parse `index_csv` and `query_csv` (each one video URL per row, first column), download+index every `index_csv` video into `self.retriever`, then download+split (but don't index) every `query_csv` video, score each of its scene clips against the index, write an HTML report (thumbnails + RD-curve comparison) to `report_path`, and return the mean score. Keeping index and query videos disjoint means a query's neighbors are never scenes from its own source video."""
-        self._index_videos(_parse_dataset(index_csv))
+        """Parse `index_csv` and `query_csv` (each one video URL per row, first column), download+index every `index_csv` video into `self.retriever`, then download+split (but don't index) every `query_csv` video, score each of its scene clips against the index, write an HTML report (thumbnails + RD-curve comparison) to `report_path`, and return the mean score. Keeping index and query videos disjoint means a query's neighbors are never scenes from its own source video. `index_csv` URLs already recorded in `self.cache_path` (from a prior `run()`) are skipped - pass `bypass_cache=True` to force re-downloading/re-splitting/re-indexing all of them."""
+        self._index_videos(
+            _parse_dataset(index_csv),
+            bypass_cache=bypass_cache,
+        )
         clip_paths = [
             clip.path
             for clip in self._load_scenes(
@@ -103,18 +112,50 @@ class RDRecallTest:
             clip_path, query_curve, neighbor_results, score
         )
 
-    def _index_videos(self, urls: list[str]) -> None:
-        """Download each URL via `self.loader`, split it into scenes, and index every scene into `self.retriever`."""
-        scenes = list(
-            self._load_scenes(urls, label="indexing")
+    def _index_videos(
+        self, urls: list[str], bypass_cache: bool = False
+    ) -> None:
+        """Download+split+index every URL not already recorded in `self.cache_path` (skipped otherwise, unless `bypass_cache`); each URL is marked as indexed - persisted immediately - once all its scenes are recorded, so an interrupted run only redoes the videos it didn't finish."""
+        indexed = (
+            set()
+            if bypass_cache
+            else self._load_indexed_urls()
         )
-        n = len(scenes)
-        for i, clip in enumerate(scenes, 1):
-            self.retriever.index_scene(clip)
+        todo = [u for u in urls if u not in indexed]
+        skipped = len(urls) - len(todo)
+        if skipped:
             print(
-                f"[indexing {i}/{n}] {clip.path}",
+                f"[indexing] skipping {skipped} already-indexed video(s)",
                 flush=True,
             )
+        for url in todo:
+            scenes = list(
+                self._load_scenes([url], label="indexing")
+            )
+            n = len(scenes)
+            for i, clip in enumerate(scenes, 1):
+                self.retriever.index_scene(clip)
+                print(
+                    f"[indexing {i}/{n}] {clip.path}",
+                    flush=True,
+                )
+            indexed.add(url)
+            self._save_indexed_urls(indexed)
+
+    def _load_indexed_urls(self) -> set[str]:
+        """URLs previously recorded as indexed in `self.cache_path` - empty if the cache file doesn't exist yet."""
+        if not os.path.exists(self.cache_path):
+            return set()
+        with open(self.cache_path) as f:
+            return set(json.load(f))
+
+    def _save_indexed_urls(self, urls: set[str]) -> None:
+        """Persist `urls` as the indexed set to `self.cache_path`."""
+        os.makedirs(
+            os.path.dirname(self.cache_path), exist_ok=True
+        )
+        with open(self.cache_path, "w") as f:
+            json.dump(sorted(urls), f)
 
     def _load_scenes(
         self, urls: list[str], label: str = "loading"

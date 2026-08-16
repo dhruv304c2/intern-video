@@ -218,7 +218,11 @@ retriever.retrieve(
 content-similarity retrieval also surface RD-curve-similar scenes?
 `run(index_csv, query_csv)` parses two CSVs of video URLs (one per row,
 first column): the index set is downloaded, split into scenes, and indexed
-into `retriever` (a private `_index_videos()` step); the query set is
+into `retriever` (a private `_index_videos()` step - each URL is recorded
+in `cache_path` (default `.cache/recall/indexed_urls.json`) once indexed,
+so a later `run()` skips re-downloading/re-splitting/re-indexing it; pass
+`bypass_cache=True` - or `./run-recall.sh --bypass-cache` - to force a
+full re-index); the query set is
 downloaded and split but never indexed, so a query's neighbors are always
 scenes from a *different* video, never its own - keeping index and query
 disjoint. For each query scene clip, `score()` retrieves its topk

@@ -20,6 +20,11 @@ def main() -> None:
         "query_csv",
         help="CSV of video URLs to query against the index (one per row, first column)",
     )
+    parser.add_argument(
+        "--bypass-cache",
+        action="store_true",
+        help="re-download+re-split+re-index every index_csv video, even ones already indexed in a prior run",
+    )
     args = parser.parse_args()
 
     store = ChromaVectorStore(".cache/index")
@@ -34,7 +39,9 @@ def main() -> None:
     )
 
     score = RDRecallTest(retriever, YtDlpLoader()).run(
-        args.index_csv, args.query_csv
+        args.index_csv,
+        args.query_csv,
+        bypass_cache=args.bypass_cache,
     )
     print(f"RDRecallTest mean score: {score:.4f}")
 
