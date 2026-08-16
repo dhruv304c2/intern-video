@@ -10,5 +10,6 @@ numpy<2
 huggingface_hub
 scipy
 yt-dlp
+tqdm
 ruff
 basedpyright

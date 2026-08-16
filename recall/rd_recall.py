@@ -6,6 +6,8 @@ import os
 from collections.abc import Iterator
 from typing import cast
 
+from tqdm import tqdm
+
 from core.embedder.internvideo2 import _ORIG_CWD
 from core.indexing import SceneClip, extract_thumbnails
 from core.ingest import split_scenes
@@ -72,22 +74,21 @@ class RDRecallTest:
                 _parse_dataset(query_csv)
             )
         ]
-        n = len(clip_paths)
         results = []
-        for i, clip in enumerate(clip_paths, 1):
+        pbar = tqdm(
+            clip_paths, desc="Scoring queries", unit="clip"
+        )
+        for clip in pbar:
             extract_thumbnails(clip)
             result = self._score_detail(clip, topk)
             os.remove(clip)
-            print(
-                f"[score {i}/{n}] {clip}: {result.score:.4f}",
-                flush=True,
+            pbar.set_postfix_str(
+                f"{os.path.basename(clip)}: {result.score:.4f}"
             )
             results.append(result)
         report_path = os.path.join(_ORIG_CWD, report_path)
         build_report(results, report_path)
-        print(
-            f"Report written to {report_path}", flush=True
-        )
+        tqdm.write(f"Report written to {report_path}")
         return (
             sum(r.score for r in results) / len(results)
             if results
@@ -138,26 +139,25 @@ class RDRecallTest:
         todo = [u for u in urls if u not in indexed]
         skipped = len(urls) - len(todo)
         if skipped:
-            print(
-                f"[indexing] skipping {skipped} already-indexed video(s)",
-                flush=True,
+            tqdm.write(
+                f"[indexing] skipping {skipped} already-indexed video(s)"
             )
-        for url in todo:
-            scenes = list(
-                self._load_scenes([url], label="indexing")
-            )
-            n = len(scenes)
-            for i, clip in enumerate(scenes, 1):
+        for url in tqdm(
+            todo, desc="Indexing videos", unit="video"
+        ):
+            scenes = list(self._load_scenes([url]))
+            for clip in tqdm(
+                scenes,
+                desc="Indexing scenes",
+                unit="scene",
+                leave=False,
+            ):
                 self.retriever.index_scene(clip)
                 # ponytail: thumbnails + RD curve are already captured in
                 # the clip's metadata (build_scene_meta) - drop the raw
                 # encoded clip right away so re-indexing many videos
                 # doesn't fill up disk.
                 os.remove(clip.path)
-                print(
-                    f"[indexing {i}/{n}] {clip.path}",
-                    flush=True,
-                )
             indexed.add(url)
             self._save_indexed_urls(indexed)
 
@@ -177,15 +177,14 @@ class RDRecallTest:
             json.dump(sorted(urls), f)
 
     def _load_scenes(
-        self, urls: list[str], label: str = "loading"
+        self, urls: list[str]
     ) -> Iterator[SceneClip]:
         """Download each URL via `self.loader` and split it into scenes, without indexing them."""
-        n = len(urls)
-        for i, url in enumerate(urls, 1):
-            print(
-                f"[video {i}/{n}] downloading {url}",
-                flush=True,
-            )
+        pbar = tqdm(
+            urls, desc="Downloading videos", unit="video"
+        )
+        for url in pbar:
+            pbar.set_postfix_str(url)
             video_path = self.loader.load(
                 url, self.video_dir
             )
@@ -193,10 +192,6 @@ class RDRecallTest:
                 video_path,
                 self.scenes_dir,
                 max_scenes=self.max_scenes,
-            )
-            print(
-                f"[video {i}/{n}] {label} {len(scenes)} scene(s)",
-                flush=True,
             )
             yield from scenes
 

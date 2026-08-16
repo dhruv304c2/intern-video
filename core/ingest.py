@@ -3,6 +3,7 @@
 import os
 
 from scenedetect import ContentDetector, detect
+from tqdm import tqdm
 
 from core.embedder.internvideo2 import _ORIG_CWD
 from core.encode import encode_video
@@ -32,17 +33,22 @@ def split_scenes(
         (None, None)
     ]
     if len(scene_list) > max_scenes:
-        print(
+        tqdm.write(
             f"{base}: {len(scene_list)} scene(s) detected, "
-            f"capping at {max_scenes}",
-            flush=True,
+            f"capping at {max_scenes}"
         )
         scene_list = scene_list[:max_scenes]
-    n = len(scene_list)
-    print(f"{base}: {n} scene(s) detected", flush=True)
 
     clips = []
-    for i, (start, end) in enumerate(scene_list, start=1):
+    for i, (start, end) in enumerate(
+        tqdm(
+            scene_list,
+            desc=f"{base}: encoding scenes",
+            unit="scene",
+            leave=False,
+        ),
+        start=1,
+    ):
         out_path = os.path.join(
             out_dir, f"{base}-Scene-{i:03d}.mp4"
         )
@@ -50,7 +56,6 @@ def split_scenes(
             start.seconds if start is not None else None
         )
         end_s = end.seconds if end is not None else None
-        print(f"[{i}/{n}] encoding {out_path}", flush=True)
         encode_video(
             video_path,
             out_path,
