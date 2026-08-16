@@ -130,6 +130,13 @@ class InternVideo2Embedder:
         fn = self._config.get("num_frames", 8)
         size_t = self._config.get("size_t", 224)
         device = torch.device(self._config.device)
+        # ponytail: frames2tensor asserts len(frames) >= fn - an ultra-short
+        # scene clip can have fewer decoded frames than that. Pad by
+        # repeating the last frame rather than rejecting the clip.
+        if frames and len(frames) < fn:
+            frames = frames + [frames[-1]] * (
+                fn - len(frames)
+            )
         frames_tensor = frames2tensor(
             frames,
             fnum=fn,

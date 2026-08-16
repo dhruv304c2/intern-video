@@ -40,12 +40,18 @@ def extract_thumbnails(clip_path: str) -> list[str]:
     paths = []
     for i, frac in enumerate(THUMBNAIL_FRACTIONS, start=1):
         out_path = f"{stem}-thumb-{i}.jpg"
+        # ponytail: on a clip that's only ~1 frame long, seeking to any
+        # nonzero offset can land past that only frame and produce an empty
+        # output - clamp the target to stay clear of the tail end.
+        seek = min(
+            duration * frac, max(0.0, duration - 0.05)
+        )
         subprocess.run(
             [
                 "ffmpeg",
                 "-y",
                 "-ss",
-                str(duration * frac),
+                str(seek),
                 "-i",
                 clip_path,
                 "-frames:v",

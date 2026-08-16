@@ -105,10 +105,16 @@ class RDRecallTest:
 
     def _index_videos(self, urls: list[str]) -> None:
         """Download each URL via `self.loader`, split it into scenes, and index every scene into `self.retriever`."""
-        for clip in self._load_scenes(
-            urls, label="indexing"
-        ):
+        scenes = list(
+            self._load_scenes(urls, label="indexing")
+        )
+        n = len(scenes)
+        for i, clip in enumerate(scenes, 1):
             self.retriever.index_scene(clip)
+            print(
+                f"[indexing {i}/{n}] {clip.path}",
+                flush=True,
+            )
 
     def _load_scenes(
         self, urls: list[str], label: str = "loading"
