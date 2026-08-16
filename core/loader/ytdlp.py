@@ -29,6 +29,12 @@ class YtDlpLoader:
             "format": "mp4/bestvideo+bestaudio/best",
             "quiet": True,
             "noprogress": True,
+            # ponytail: the default "web" client's URLs 403 on download for
+            # some videos (YouTube session/IP lock) - "android" client's
+            # URLs work without that restriction.
+            "extractor_args": {
+                "youtube": {"player_client": ["android"]}
+            },
         }
         with yt_dlp.YoutubeDL(
             opts  # pyright: ignore[reportArgumentType]
