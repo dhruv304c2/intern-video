@@ -2,6 +2,7 @@
 
 import json
 import os
+import random
 from collections.abc import Iterator
 from typing import cast
 
@@ -85,16 +86,26 @@ class RDRecallTest:
         report_path = os.path.join(_ORIG_CWD, report_path)
         build_report(results, report_path)
         tqdm.write(f"Report written to {report_path}")
-        return (
+        mean_score = (
             sum(r.score for r in results) / len(results)
             if results
             else 0.0
         )
+        mean_baseline = (
+            sum(r.baseline_score for r in results)
+            / len(results)
+            if results
+            else 0.0
+        )
+        tqdm.write(
+            f"Mean score: {mean_score:.4f} vs random-neighbor baseline: {mean_baseline:.4f}"
+        )
+        return mean_score
 
     def _score_detail(
         self, clip_path: str, topk: int = 5
     ) -> QueryResult:
-        """Like `score()`, but also keeps the query/neighbor RD curves for report rendering.
+        """Like `score()`, but also keeps the query/neighbor RD curves for report rendering, plus a `baseline_score` - the same mean RD-curve similarity but against `topk` *random* indexed clips instead of content-similarity neighbors, so the report shows whether content similarity beats picking neighbors at random.
 
         Neighbors' RD curves come from their stored metadata (precomputed at
         index time - see `build_scene_meta`), not by re-reading their clip
@@ -113,14 +124,29 @@ class RDRecallTest:
             neighbor_results.append(
                 NeighborResult(neighbor, similarity, curve)
             )
-        score = (
-            sum(n.similarity for n in neighbor_results)
-            / len(neighbor_results)
-            if neighbor_results
-            else 0.0
+        score = _mean_similarity(neighbor_results)
+        baseline = _random_clips(
+            self.retriever, clip_path, topk
+        )
+        baseline_score = _mean_similarity(
+            [
+                NeighborResult(
+                    clip,
+                    _rd_curve_similarity(
+                        query_curve,
+                        _rd_curve_from_meta(meta),
+                    ),
+                    _rd_curve_from_meta(meta),
+                )
+                for clip, meta in baseline
+            ]
         )
         return QueryResult(
-            clip_path, query_curve, neighbor_results, score
+            clip_path,
+            query_curve,
+            neighbor_results,
+            score,
+            baseline_score,
         )
 
     def _index_videos(
@@ -204,6 +230,32 @@ def _other_clips(
         for clip, meta, _ in matches
         if clip != clip_path
     ][:topk]
+
+
+def _random_clips(
+    retriever: RRFRetriever, clip_path: str, n: int
+) -> list[tuple[str, Metadata]]:
+    """`n` random (clip, metadata) pairs from the retriever's index, excluding `clip_path` - a baseline to compare content-similarity neighbors against."""
+    collection = retriever.collections[0]
+    pool = [
+        (cast(str, meta["clip"]), meta)
+        for meta, _ in collection.store.list_all(
+            collection.namespace
+        )
+        if meta["clip"] != clip_path
+    ]
+    return random.sample(pool, min(n, len(pool)))
+
+
+def _mean_similarity(
+    results: list[NeighborResult],
+) -> float:
+    """Mean `similarity` over `results`, or 0.0 if empty."""
+    return (
+        sum(r.similarity for r in results) / len(results)
+        if results
+        else 0.0
+    )
 
 
 def _rd_curve_from_meta(

@@ -35,6 +35,7 @@ def test_build_report_writes_html_with_score_and_clips() -> (
                 )
             ],
             score=0.9,
+            baseline_score=0.5,
         )
 
         out_path = os.path.join(tmp, "report.html")
