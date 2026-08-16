@@ -56,9 +56,11 @@ directly inside each directory (see `VIDEO_EXTENSIONS` in `cli/recall.py`).
 `--max-scenes` (default 50) caps how many scenes each video is split into -
 see `split_scenes` below. Or, against the sample sets in `datasets/`:
 ```
-./run-recall.sh                 # MAX_SCENES defaults to 50
-MAX_SCENES=100 ./run-recall.sh  # override via env var
-./run-recall.sh --bypass-cache  # extra args are forwarded to main.py
+./run-recall.sh                                # yt mode, sample CSVs, MAX_SCENES defaults to 50
+MAX_SCENES=100 ./run-recall.sh                 # override via env var
+./run-recall.sh --bypass-cache                 # extra args are forwarded to main.py
+./run-recall.sh yt <index.csv> <query.csv>     # yt mode, your own CSVs
+./run-recall.sh local <index_dir> <query_dir>  # local mode
 ```
 Detects scene cuts, then encodes each scene straight from the source in one
 ffmpeg pass (cut + bitrate encode together, no intermediate re-encode), then
