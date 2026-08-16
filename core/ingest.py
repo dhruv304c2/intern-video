@@ -13,8 +13,9 @@ def split_scenes(
     video_path: str,
     out_dir: str,
     kbps: int = 2500,
+    max_scenes: int = 200,
 ) -> list[SceneClip]:
-    """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`."""
+    """Detect scene cuts in `video_path` and write one encoded clip per scene into `out_dir`. Caps at `max_scenes` (a false-positive-heavy detection run on fast-cut/animated content can otherwise yield hundreds of spurious near-instant scenes) - only the first `max_scenes` are encoded, the rest are dropped."""
     # core.embedder.internvideo2 (imported above) changes the process's cwd
     # as a side effect of loading the vendored model config - resolve
     # user-supplied paths against the original cwd it captured, not the
@@ -30,6 +31,13 @@ def split_scenes(
     scene_list = detect(video_path, ContentDetector()) or [
         (None, None)
     ]
+    if len(scene_list) > max_scenes:
+        print(
+            f"{base}: {len(scene_list)} scene(s) detected, "
+            f"capping at {max_scenes}",
+            flush=True,
+        )
+        scene_list = scene_list[:max_scenes]
     n = len(scene_list)
     print(f"{base}: {n} scene(s) detected", flush=True)
 
