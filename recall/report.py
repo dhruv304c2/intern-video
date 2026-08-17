@@ -57,7 +57,9 @@ def build_report(
 
 def _query_section(r: QueryResult) -> str:
     neighbors_html = "".join(
-        _clip_card(n.clip, n.curve, n.similarity)
+        _clip_card(
+            n.clip, n.curve, n.similarity, compare=r.curve
+        )
         for n in r.neighbors
     )
     return (
@@ -67,7 +69,8 @@ def _query_section(r: QueryResult) -> str:
         '<div class="row">'
         '<div class="col"><h3>Query</h3>'
         f"{_clip_card(r.clip, r.curve, None, is_query=True)}</div>"
-        '<div class="col"><h3>Content-similarity neighbors</h3>'
+        '<div class="col"><h3>Content-similarity neighbors '
+        "(dashed line = query curve)</h3>"
         f'<div class="neighbors">{neighbors_html}</div></div>'
         "</div></section>"
     )
@@ -78,6 +81,7 @@ def _clip_card(
     curve: RDCurve,
     similarity: float | None,
     is_query: bool = False,
+    compare: RDCurve | None = None,
 ) -> str:
     label = (
         "query"
@@ -90,18 +94,43 @@ def _clip_card(
         f'<img src="{_thumbnail_uri(clip)}">'
         f'<div class="label">{html.escape(os.path.basename(clip))}</div>'
         f'<div class="label">{label}</div>'
-        f"{_curve_table(curve)}</div>"
+        f"{_curve_chart(curve, compare)}</div>"
     )
 
 
-def _curve_table(curve: RDCurve) -> str:
-    rows = "".join(
-        f"<tr><td>{kbps}</td><td>{vmaf:.1f}</td></tr>"
-        for kbps, vmaf in curve
+def _curve_chart(
+    curve: RDCurve, compare: RDCurve | None = None
+) -> str:
+    """Inline SVG line chart of kbps (x) vs VMAF (y); `compare` (if given, e.g. the query's curve) is overlaid as a dashed reference line so a neighbor's curve can be visually checked against it."""
+    width, height, pad = 160, 90, 4
+    vmafs = [v for _, v in curve] + (
+        [v for _, v in compare] if compare else []
+    )
+    lo, hi = min(vmafs), max(vmafs)
+    hi = hi if hi > lo else lo + 1.0
+    kbps_vals = [k for k, _ in curve]
+    kmin, kmax = min(kbps_vals), max(kbps_vals)
+    kmax = kmax if kmax > kmin else kmin + 1
+
+    def points(c: RDCurve) -> str:
+        return " ".join(
+            f"{pad + (k - kmin) / (kmax - kmin) * (width - 2 * pad):.1f},"
+            f"{height - pad - (v - lo) / (hi - lo) * (height - 2 * pad):.1f}"
+            for k, v in c
+        )
+
+    compare_line = (
+        f'<polyline points="{points(compare)}" fill="none" '
+        'stroke="#bbb" stroke-width="1.5" stroke-dasharray="3,2"/>'
+        if compare
+        else ""
     )
     return (
-        '<table class="curve"><tr><th>kbps</th><th>VMAF</th></tr>'
-        f"{rows}</table>"
+        f'<svg width="{width}" height="{height}" class="chart">'
+        f"{compare_line}"
+        f'<polyline points="{points(curve)}" fill="none" '
+        'stroke="#3b6fd6" stroke-width="1.5"/>'
+        "</svg>"
     )
 
 
@@ -125,7 +154,7 @@ _CSS = (
     ".card.query-card{border:2px solid #3b6fd6;box-shadow:0 0 0 3px #dce8fc}"
     ".card img{width:100%;border-radius:4px}"
     ".label{font-size:.8rem;color:#555}"
-    "table.curve{width:100%;font-size:.75rem;margin-top:.25rem}"
+    ".chart{display:block;margin-top:.25rem;background:#fafafa;border-radius:4px}"
     "section.query{margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:2px solid #eee}"
     "section.query h2{margin-bottom:1rem}"
 )
