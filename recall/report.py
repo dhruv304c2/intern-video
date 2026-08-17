@@ -101,13 +101,16 @@ def _clip_card(
 def _curve_chart(
     curve: RDCurve, compare: RDCurve | None = None
 ) -> str:
-    """Inline SVG line chart of kbps (x) vs VMAF (y); `compare` (if given, e.g. the query's curve) is overlaid as a dashed reference line so a neighbor's curve can be visually checked against it."""
+    """Inline SVG line chart of kbps (x) vs VMAF (y, fixed 0-100 scale); `compare` (if given, e.g. the query's curve) is overlaid as a dashed reference line so a neighbor's curve can be visually checked against it.
+
+    The y-axis is intentionally fixed to VMAF's full 0-100 range rather than
+    auto-scaled to each card's own min/max - auto-scaling stretches a small
+    absolute VMAF gap to fill the whole chart, making curves look far more
+    different than the similarity score (based on that same absolute gap)
+    reports.
+    """
     width, height, pad = 160, 90, 4
-    vmafs = [v for _, v in curve] + (
-        [v for _, v in compare] if compare else []
-    )
-    lo, hi = min(vmafs), max(vmafs)
-    hi = hi if hi > lo else lo + 1.0
+    lo, hi = 0.0, 100.0
     kbps_vals = [k for k, _ in curve]
     kmin, kmax = min(kbps_vals), max(kbps_vals)
     kmax = kmax if kmax > kmin else kmin + 1
